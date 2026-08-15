@@ -52,6 +52,14 @@ type DashboardData = {
   pipeline: { status: string; nextRow: number; endRow: number };
 };
 
+type YouTubeVideo = {
+  id: string;
+  title: string;
+  published: string;
+  thumbnail: string;
+  url: string;
+};
+
 type DashboardView = "queue" | "all" | "linkedin" | "email" | "results";
 
 const demo: DashboardData = {
@@ -136,6 +144,10 @@ export function LeadGenDashboard() {
   const [notice, setNotice] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeView, setActiveView] = useState<DashboardView>("queue");
+  const [videosOpen, setVideosOpen] = useState(false);
+  const [videoCache, setVideoCache] = useState<Record<string, YouTubeVideo[]>>({});
+  const [videoLoading, setVideoLoading] = useState(false);
+  const [videoError, setVideoError] = useState("");
 
   const load = useCallback(async () => {
     setSyncing(true);
@@ -197,6 +209,11 @@ export function LeadGenDashboard() {
     }
   }, [activeView, leads, selected.row]);
 
+  useEffect(() => {
+    setVideosOpen(false);
+    setVideoError("");
+  }, [selected.row]);
+
   const viewCopy: Record<DashboardView, { eyebrow: string; title: string; description: string }> = {
     queue: { eyebrow: "Today", title: "Your highest-leverage leads", description: "Sorted by fit, evidence, and actionability" },
     all: { eyebrow: "Lead database", title: "All leads", description: "Search the complete Sheet3 lead inventory" },
@@ -241,6 +258,34 @@ export function LeadGenDashboard() {
   async function copyMessage() {
     await navigator.clipboard.writeText(selected.message || "");
     setNotice("LinkedIn message copied");
+  }
+
+  async function toggleVideos() {
+    if (!selected.youtube) {
+      setNotice("No YouTube channel is available for this lead yet.");
+      return;
+    }
+    if (videosOpen) {
+      setVideosOpen(false);
+      return;
+    }
+
+    setVideosOpen(true);
+    setVideoError("");
+    if (videoCache[selected.youtube]) return;
+
+    setVideoLoading(true);
+    try {
+      const response = await fetch(`/api/youtube?channel=${encodeURIComponent(selected.youtube)}`);
+      const payload = (await response.json()) as { videos?: YouTubeVideo[]; error?: string };
+      if (!response.ok) throw new Error(payload.error || "Could not load videos");
+      setVideoCache((current) => ({ ...current, [selected.youtube]: payload.videos || [] }));
+      if (!payload.videos?.length) setVideoError("No recent public videos were found for this channel.");
+    } catch (error) {
+      setVideoError(error instanceof Error ? error.message : "Could not load recent videos.");
+    } finally {
+      setVideoLoading(false);
+    }
   }
 
   return (
@@ -332,10 +377,29 @@ export function LeadGenDashboard() {
               <button className="icon-button" aria-label="More lead options"><MoreHorizontal size={20} /></button>
             </div>
 
-            <div className="identity-card">
+            <button className="identity-card identity-button" onClick={toggleVideos} aria-expanded={videosOpen} aria-controls="recent-youtube-videos" title={selected.youtube ? "Preview recent YouTube videos" : "No YouTube channel available"}>
               <div className="person-avatar">{selected.person ? selected.person.split(/\s+/).map((part) => part[0]).slice(0, 2).join("") : "?"}</div>
               <div><strong>{selected.person || "Decision maker needed"}</strong><span>{selected.title || "Unverified role"}</span><div className="badges"><span className={scoreTone(selected.matchScore)}>{selected.matchScore}% match</span><span className="soft-badge">{selected.matchStatus}</span></div></div>
-            </div>
+              <span className={videosOpen ? "video-chevron video-chevron-open" : "video-chevron"}><Video size={15} /><ChevronDown size={15} /></span>
+            </button>
+
+            {videosOpen && (
+              <div className="video-drawer" id="recent-youtube-videos">
+                <div className="video-drawer-head"><div><strong>Recent YouTube videos</strong><span>Play without leaving this lead</span></div><a href={selected.youtube} target="_blank" rel="noreferrer">Full channel <ArrowUpRight size={14} /></a></div>
+                {videoLoading ? <div className="video-loading"><RefreshCw size={17} className="spin" /> Loading recent videos…</div> : null}
+                {videoError ? <div className="video-error">{videoError}</div> : null}
+                {!videoLoading && !videoError && videoCache[selected.youtube]?.length ? (
+                  <div className="video-grid">
+                    {videoCache[selected.youtube].map((video) => (
+                      <article className="video-card" key={video.id}>
+                        <div className="video-frame"><iframe src={`https://www.youtube-nocookie.com/embed/${video.id}`} title={video.title} loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /></div>
+                        <div><strong>{video.title}</strong><a href={video.url} target="_blank" rel="noreferrer">Open on YouTube <ArrowUpRight size={12} /></a></div>
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            )}
 
             {selected.matchScore < 80 && <div className="warning-card"><CircleAlert size={18} /><div><strong>Review before contacting</strong><span>The website/company evidence is not strong enough for frictionless outreach yet.</span></div></div>}
 
