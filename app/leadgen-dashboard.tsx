@@ -52,6 +52,8 @@ type DashboardData = {
   pipeline: { status: string; nextRow: number; endRow: number };
 };
 
+type DashboardView = "queue" | "all" | "linkedin" | "email" | "results";
+
 const demo: DashboardData = {
   stats: { total: 8699, verified: 412, openProfile: 0, ready: 186 },
   pipeline: { status: "ready", nextRow: 698, endRow: 8700 },
@@ -133,6 +135,7 @@ export function LeadGenDashboard() {
   const [syncing, setSyncing] = useState(false);
   const [notice, setNotice] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeView, setActiveView] = useState<DashboardView>("queue");
 
   const load = useCallback(async () => {
     setSyncing(true);
@@ -161,9 +164,22 @@ export function LeadGenDashboard() {
     void load();
   }, [load]);
 
+  const viewCounts = useMemo(() => ({
+    linkedin: data.leads.filter((lead) => Boolean(lead.linkedIn)).length,
+    email: data.leads.filter((lead) => Boolean(lead.email)).length,
+    verified: data.leads.filter((lead) => lead.matchScore >= 90).length,
+    review: data.leads.filter((lead) => lead.matchScore < 80).length,
+  }), [data.leads]);
+
   const leads = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return data.leads.filter((lead) => {
+      const matchesView =
+        activeView === "queue" ||
+        activeView === "all" ||
+        activeView === "results" ||
+        (activeView === "linkedin" && Boolean(lead.linkedIn)) ||
+        (activeView === "email" && Boolean(lead.email));
       const matchesQuery = !needle || [lead.company, lead.person, lead.city, lead.email].join(" ").toLowerCase().includes(needle);
       const matchesFilter =
         filter === "Priority" ||
@@ -171,9 +187,30 @@ export function LeadGenDashboard() {
         (filter === "Needs review" && lead.matchScore < 80) ||
         (filter === "Ready to connect" && lead.eligibility.toLowerCase().includes("connect")) ||
         (filter === "Email first" && lead.channel.toLowerCase().includes("email"));
-      return matchesQuery && matchesFilter;
+      return matchesView && matchesQuery && matchesFilter;
     });
-  }, [data.leads, filter, query]);
+  }, [activeView, data.leads, filter, query]);
+
+  useEffect(() => {
+    if (activeView !== "results" && leads.length && !leads.some((lead) => lead.row === selected.row)) {
+      setSelected(leads[0]);
+    }
+  }, [activeView, leads, selected.row]);
+
+  const viewCopy: Record<DashboardView, { eyebrow: string; title: string; description: string }> = {
+    queue: { eyebrow: "Today", title: "Your highest-leverage leads", description: "Sorted by fit, evidence, and actionability" },
+    all: { eyebrow: "Lead database", title: "All leads", description: "Search the complete Sheet3 lead inventory" },
+    linkedin: { eyebrow: "LinkedIn channel", title: "LinkedIn outreach", description: "Profiles found and ready for identity review" },
+    email: { eyebrow: "Email channel", title: "Email outreach", description: "Contacts with an email and current Day 1 copy" },
+    results: { eyebrow: "Coverage", title: "Enrichment results", description: "Current completion, verification, and channel coverage" },
+  };
+
+  function changeView(view: DashboardView) {
+    setActiveView(view);
+    setFilter("Priority");
+    setQuery("");
+    setSidebarOpen(false);
+  }
 
   async function updateLead(row: number, field: string, value: string | boolean) {
     setNotice("Saving to Sheet3…");
@@ -214,11 +251,11 @@ export function LeadGenDashboard() {
           <div><strong>LeadGen</strong><span>Command Center</span></div>
         </div>
         <nav>
-          <button className="nav-item active"><Sparkles size={18} /> Today&apos;s queue <span>{data.stats.ready}</span></button>
-          <button className="nav-item"><UserRoundCheck size={18} /> All leads</button>
-          <button className="nav-item"><BadgeCheck size={18} /> LinkedIn</button>
-          <button className="nav-item"><Mail size={18} /> Email</button>
-          <button className="nav-item"><BarChart3 size={18} /> Results</button>
+          <button className={activeView === "queue" ? "nav-item active" : "nav-item"} onClick={() => changeView("queue")} aria-current={activeView === "queue" ? "page" : undefined}><Sparkles size={18} /> Today&apos;s queue <span>{data.stats.ready}</span></button>
+          <button className={activeView === "all" ? "nav-item active" : "nav-item"} onClick={() => changeView("all")} aria-current={activeView === "all" ? "page" : undefined}><UserRoundCheck size={18} /> All leads</button>
+          <button className={activeView === "linkedin" ? "nav-item active" : "nav-item"} onClick={() => changeView("linkedin")} aria-current={activeView === "linkedin" ? "page" : undefined}><BadgeCheck size={18} /> LinkedIn <span>{viewCounts.linkedin}</span></button>
+          <button className={activeView === "email" ? "nav-item active" : "nav-item"} onClick={() => changeView("email")} aria-current={activeView === "email" ? "page" : undefined}><Mail size={18} /> Email <span>{viewCounts.email}</span></button>
+          <button className={activeView === "results" ? "nav-item active" : "nav-item"} onClick={() => changeView("results")} aria-current={activeView === "results" ? "page" : undefined}><BarChart3 size={18} /> Results</button>
         </nav>
         <div className="sidebar-foot">
           <div className="usage-row"><span>Apify guardrail</span><strong>$4.00 max</strong></div>
@@ -231,8 +268,8 @@ export function LeadGenDashboard() {
         <header className="topbar">
           <button className="icon-button mobile-menu" onClick={() => setSidebarOpen((value) => !value)} aria-label="Toggle menu"><Menu size={20} /></button>
           <div>
-            <p className="eyebrow">Friday, August 14</p>
-            <h1>Your highest-leverage leads</h1>
+            <p className="eyebrow">{viewCopy[activeView].eyebrow}</p>
+            <h1>{viewCopy[activeView].title}</h1>
           </div>
           <div className="top-actions">
             <button className="ghost-button" onClick={load} disabled={syncing}><RefreshCw size={16} className={syncing ? "spin" : ""} /> Sync sheet</button>
@@ -253,13 +290,30 @@ export function LeadGenDashboard() {
           <article className="stat-accent"><span>Ready for action</span><strong>{data.stats.ready.toLocaleString()}</strong><small>Human-reviewed next steps</small></article>
         </section>
 
+        {activeView === "results" ? (
+          <section className="results-view" aria-label="Enrichment results">
+            <div className="results-summary">
+              <article><BadgeCheck size={20} /><span>LinkedIn coverage</span><strong>{viewCounts.linkedin}</strong><small>Profiles in the currently loaded working set</small></article>
+              <article><Mail size={20} /><span>Email coverage</span><strong>{viewCounts.email}</strong><small>Contacts available for email outreach</small></article>
+              <article><UserRoundCheck size={20} /><span>Verified people</span><strong>{viewCounts.verified}</strong><small>Identity match score of 90 or higher</small></article>
+              <article><CircleAlert size={20} /><span>Needs review</span><strong>{viewCounts.review}</strong><small>Manual identity review recommended</small></article>
+            </div>
+            <div className="coverage-card">
+              <div className="section-title"><span>Pipeline coverage</span><small>{data.pipeline.status}</small></div>
+              <div className="coverage-row"><span>LinkedIn candidates</span><div><i style={{ width: `${data.leads.length ? Math.round((viewCounts.linkedin / data.leads.length) * 100) : 0}%` }} /></div><strong>{data.leads.length ? Math.round((viewCounts.linkedin / data.leads.length) * 100) : 0}%</strong></div>
+              <div className="coverage-row"><span>Email contacts</span><div><i style={{ width: `${data.leads.length ? Math.round((viewCounts.email / data.leads.length) * 100) : 0}%` }} /></div><strong>{data.leads.length ? Math.round((viewCounts.email / data.leads.length) * 100) : 0}%</strong></div>
+              <div className="coverage-row"><span>Verified decision makers</span><div><i style={{ width: `${data.leads.length ? Math.round((viewCounts.verified / data.leads.length) * 100) : 0}%` }} /></div><strong>{data.leads.length ? Math.round((viewCounts.verified / data.leads.length) * 100) : 0}%</strong></div>
+              <p>Coverage percentages use the leads returned by the current Sheet3 sync. The total cards above remain the authoritative full-list totals.</p>
+            </div>
+          </section>
+        ) : (
         <section className="workspace">
           <div className="queue-panel">
             <div className="queue-toolbar">
               <label className="search-box"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search company, person, or city" /></label>
               <div className="filter-menu"><Filter size={16} /><select value={filter} onChange={(event) => setFilter(event.target.value)}>{filters.map((item) => <option key={item}>{item}</option>)}</select><ChevronDown size={15} /></div>
             </div>
-            <div className="queue-heading"><span>{leads.length} leads in view</span><small>Sorted by fit, evidence, and actionability</small></div>
+            <div className="queue-heading"><span>{leads.length} leads in view</span><small>{viewCopy[activeView].description}</small></div>
             <div className="lead-list">
               {loading ? <div className="empty-state">Loading Sheet3…</div> : leads.map((lead) => (
                 <button key={lead.row} className={selected.row === lead.row ? "lead-row selected" : "lead-row"} onClick={() => setSelected(lead)}>
@@ -306,6 +360,7 @@ export function LeadGenDashboard() {
             </div>
           </aside>
         </section>
+        )}
       </main>
     </div>
   );

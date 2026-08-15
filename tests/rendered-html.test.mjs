@@ -14,6 +14,10 @@ test("ships the LeadGen dashboard and secured server proxy", async () => {
   assert.match(page, /<LeadGenDashboard \/>/);
   assert.match(dashboard, /Sync sheet/);
   assert.match(dashboard, /Mark request sent/);
+  assert.match(dashboard, /changeView\("linkedin"\)/);
+  assert.match(dashboard, /changeView\("email"\)/);
+  assert.match(dashboard, /changeView\("results"\)/);
+  assert.match(dashboard, /Enrichment results/);
   assert.match(apiRoute, /process\.env\.SHEET_API_URL/);
   assert.match(apiRoute, /process\.env\.SHEET_API_TOKEN/);
   assert.doesNotMatch(apiRoute, /sk-or-v1-|APIFY_TOKEN\s*=/);
