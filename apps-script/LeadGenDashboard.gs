@@ -8,7 +8,7 @@ function doPost(event) {
     const request = JSON.parse(event && event.postData && event.postData.contents || '{}');
     const expected = PropertiesService.getScriptProperties().getProperty('DASHBOARD_TOKEN');
     if (!expected || request.token !== expected) return lgJson_({ error: 'Unauthorized' });
-    if (request.action === 'list') return lgJson_(lgDashboardData_(Math.min(200, Math.max(10, Number(request.limit) || 80))));
+    if (request.action === 'list') return lgJson_(lgDashboardData_(Math.min(200, Math.max(10, Number(request.limit) || 80)), Math.max(0, Number(request.offset) || 0)));
     if (request.action === 'update') return lgJson_(lgUpdateLead_(request));
     if (request.action === 'startPipeline') { startLinkedInBatchAll(); return lgJson_({ ok: true, pipeline: getLinkedInBatchAllStatus() }); }
     if (request.action === 'stopPipeline') { stopLinkedInBatchAll(); return lgJson_({ ok: true, pipeline: getLinkedInBatchAllStatus() }); }
@@ -16,7 +16,7 @@ function doPost(event) {
   } catch (error) { return lgJson_({ error: String(error && error.message || error) }); }
 }
 
-function lgDashboardData_(limit) {
+function lgDashboardData_(limit, offset) {
   const sheet = liGetSheet_();
   const map = liHeaderMap_(sheet);
   const lastRow = sheet.getLastRow();
@@ -45,10 +45,11 @@ function lgDashboardData_(limit) {
     if (/ready|connect|email first/i.test(data.eligibility[index])) ready++;
     if (!data.company[index]) continue;
     const lead = { row: index + 2, company: data.company[index], city: data.city[index], website: data.website[index], person: data.person[index], title: data.title[index], linkedIn: data.linkedIn[index], email: data.email[index], youtube: data.youtube[index], signal: data.signal[index] || data.matchStatus[index] || 'Awaiting signal review', message: data.message[index], matchScore: score, matchStatus: data.matchStatus[index] || (data.linkedIn[index] ? 'Existing link' : 'Not enriched'), eligibility: data.eligibility[index] || (data.linkedIn[index] ? 'Review identity' : 'Find LinkedIn'), channel: data.channel[index] || (data.email[index] ? 'Email first' : 'Needs research'), connectionStatus: data.connectionStatus[index] || 'Not sent', enrichmentStatus: data.enrichmentStatus[index] || 'queued' };
-    if (lead.linkedIn || lead.message || lead.enrichmentStatus === 'review' || score > 0) leads.push(lead);
+    leads.push(lead);
   }
   leads.sort((a, b) => (b.matchScore - a.matchScore) || (a.row - b.row));
-  return { leads: leads.slice(0, limit), stats: { total: rowCount, verified: verified, openProfile: openProfile, ready: ready }, pipeline: getLinkedInBatchAllStatus() };
+  const page = leads.slice(offset, offset + limit);
+  return { leads: page, stats: { total: rowCount, verified: verified, openProfile: openProfile, ready: ready }, pipeline: getLinkedInBatchAllStatus(), pagination: { offset: offset, limit: limit, returned: page.length, totalCandidates: leads.length, hasMore: offset + page.length < leads.length } };
 }
 
 function lgUpdateLead_(request) {
