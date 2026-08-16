@@ -1,7 +1,8 @@
 // ============================================================
 // Sheet3 -> Supabase mirror for the LeadGen Command Center.
-// Sheet3 is the source of truth. The Supabase service key is stored only in
-// Apps Script properties, never in cells or browser-delivered code.
+// Sheet3 is the source of truth. The Supabase publishable key and private
+// sync token are stored only in Apps Script properties, never in cells or
+// browser-delivered code.
 // ============================================================
 
 const SUPABASE_SYNC_CONFIG = {
@@ -168,17 +169,21 @@ function sgDashboardStats_(sheet, map) {
 }
 
 function sgUpsertLeads_(leads) { sgRestUpsert_(SUPABASE_SYNC_CONFIG.TABLE, leads, 'row_number'); }
-function sgUpsertMeta_(value) { sgRestUpsert_(SUPABASE_SYNC_CONFIG.META_TABLE, [{ key: 'dashboard', value: value, updated_at: new Date().toISOString() }], 'key'); }
+function sgUpsertMeta_(value) { sgRestUpsert_(SUPABASE_SYNC_CONFIG.META_TABLE, value, 'dashboard'); }
 
-function sgRestUpsert_(table, rows, conflictColumn) {
-  if (!rows.length) return;
+function sgRestUpsert_(table, value) {
   const config = sgRequireConfiguration_();
-  const response = UrlFetchApp.fetch(config.url + '/rest/v1/' + table + '?on_conflict=' + encodeURIComponent(conflictColumn), {
+  const rpc = table === SUPABASE_SYNC_CONFIG.TABLE ? 'leadgen_upsert' : 'leadgen_set_meta';
+  const payload = table === SUPABASE_SYNC_CONFIG.TABLE
+    ? { p_token: config.token, p_leads: value }
+    : { p_token: config.token, p_value: value };
+  if (table === SUPABASE_SYNC_CONFIG.TABLE && !value.length) return;
+  const response = UrlFetchApp.fetch(config.url + '/rest/v1/rpc/' + rpc, {
     method: 'post',
     contentType: 'application/json',
     muteHttpExceptions: true,
-    headers: { apikey: config.key, Authorization: 'Bearer ' + config.key, Prefer: 'resolution=merge-duplicates,return=minimal' },
-    payload: JSON.stringify(rows)
+    headers: { apikey: config.key },
+    payload: JSON.stringify(payload)
   });
   const status = response.getResponseCode();
   if (status < 200 || status >= 300) throw new Error('Supabase HTTP ' + status + ': ' + response.getContentText().slice(0, 500));
@@ -186,15 +191,16 @@ function sgRestUpsert_(table, rows, conflictColumn) {
 
 function sgIsConfigured_() {
   const props = PropertiesService.getScriptProperties();
-  return Boolean(props.getProperty('SUPABASE_URL') && props.getProperty('SUPABASE_SERVICE_ROLE_KEY'));
+  return Boolean(props.getProperty('SUPABASE_URL') && props.getProperty('SUPABASE_PUBLISHABLE_KEY') && props.getProperty('LEADGEN_SYNC_TOKEN'));
 }
 
 function sgRequireConfiguration_() {
   const props = PropertiesService.getScriptProperties();
   const url = String(props.getProperty('SUPABASE_URL') || '').replace(/\/$/, '');
-  const key = String(props.getProperty('SUPABASE_SERVICE_ROLE_KEY') || '');
-  if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(url) || !key) throw new Error('Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Script Properties first.');
-  return { url: url, key: key };
+  const key = String(props.getProperty('SUPABASE_PUBLISHABLE_KEY') || '');
+  const token = String(props.getProperty('LEADGEN_SYNC_TOKEN') || '');
+  if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(url) || !key || !token) throw new Error('Set SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, and LEADGEN_SYNC_TOKEN in Script Properties first.');
+  return { url: url, key: key, token: token };
 }
 
 function sgDeleteTriggers_(names) {

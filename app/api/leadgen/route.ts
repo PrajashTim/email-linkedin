@@ -28,8 +28,9 @@ type SupabaseLead = {
 
 function supabaseConfig() {
   const url = process.env.SUPABASE_URL?.replace(/\/$/, "");
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  return url && key ? { url, key } : null;
+  const key = process.env.SUPABASE_PUBLISHABLE_KEY;
+  const token = process.env.LEADGEN_SYNC_TOKEN;
+  return url && key && token ? { url, key, token } : null;
 }
 
 function asDashboardLead(lead: SupabaseLead) {
@@ -59,25 +60,31 @@ async function listFromSupabase(body: Record<string, unknown>) {
   if (!config) return null;
   const limit = Math.min(200, Math.max(10, Number(body.limit) || 80));
   const offset = Math.max(0, Number(body.offset) || 0);
-  const fields = "row_number,company,city,website,person,title,linkedin,email,youtube,signal,message,match_score,match_status,eligibility,channel,connection_status,enrichment_status";
-  const leadsUrl = new URL(`${config.url}/rest/v1/leadgen_leads`);
-  leadsUrl.searchParams.set("select", fields);
-  leadsUrl.searchParams.set("order", "match_score.desc.nullslast,row_number.asc");
-  leadsUrl.searchParams.set("offset", String(offset));
-  leadsUrl.searchParams.set("limit", String(limit));
-  const headers = { apikey: config.key, Authorization: `Bearer ${config.key}`, Prefer: "count=exact" };
-  const response = await fetch(leadsUrl, { headers, cache: "no-store" });
+  const headers = { apikey: config.key, "content-type": "application/json" };
+  const response = await fetch(`${config.url}/rest/v1/rpc/leadgen_read_page`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ p_token: config.token, p_limit: limit, p_offset: offset }),
+    cache: "no-store",
+  });
   if (!response.ok) return null;
   const leads = (await response.json()) as SupabaseLead[];
-  const total = Number(response.headers.get("content-range")?.split("/")[1]) || 0;
+  const countResponse = await fetch(`${config.url}/rest/v1/rpc/leadgen_count`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ p_token: config.token }),
+    cache: "no-store",
+  });
+  const total = countResponse.ok ? Number(await countResponse.json()) || 0 : 0;
   if (!total) return null;
 
-  const metaUrl = new URL(`${config.url}/rest/v1/leadgen_meta`);
-  metaUrl.searchParams.set("select", "value");
-  metaUrl.searchParams.set("key", "eq.dashboard");
-  metaUrl.searchParams.set("limit", "1");
-  const metaResponse = await fetch(metaUrl, { headers, cache: "no-store" });
-  const meta = metaResponse.ok ? (await metaResponse.json() as Array<{ value?: { stats?: unknown; pipeline?: unknown } }>)[0]?.value : undefined;
+  const metaResponse = await fetch(`${config.url}/rest/v1/rpc/leadgen_read_meta`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ p_token: config.token }),
+    cache: "no-store",
+  });
+  const meta = metaResponse.ok ? (await metaResponse.json() as { stats?: unknown; pipeline?: unknown }) : undefined;
   return {
     leads: leads.map(asDashboardLead),
     stats: meta?.stats || { total, verified: 0, openProfile: 0, ready: 0 },
