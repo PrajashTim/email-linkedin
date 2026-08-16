@@ -14,8 +14,12 @@ test("ships the LeadGen dashboard and secured server proxy", async () => {
   assert.match(page, /LeadGen Command Center/);
   assert.match(page, /<LeadGenDashboard \/>/);
   assert.match(dashboard, /Sync sheet/);
-  assert.match(dashboard, /Mark request sent/);
+  assert.match(dashboard, /Mark LinkedIn DM sent/);
+  assert.match(dashboard, /Undo LinkedIn contact/);
+  assert.match(dashboard, /LinkedIn contacted/);
+  assert.match(dashboard, /connectionStatus/);
   assert.match(dashboard, /changeView\("linkedin"\)/);
+  assert.match(dashboard, /changeView\("linkedin-contacted"\)/);
   assert.match(dashboard, /changeView\("email"\)/);
   assert.match(dashboard, /changeView\("results"\)/);
   assert.match(dashboard, /Enrichment results/);

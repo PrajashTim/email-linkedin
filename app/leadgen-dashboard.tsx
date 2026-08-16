@@ -61,7 +61,7 @@ type YouTubeVideo = {
   url: string;
 };
 
-type DashboardView = "queue" | "all" | "linkedin" | "email" | "results";
+type DashboardView = "queue" | "all" | "linkedin" | "linkedin-contacted" | "email" | "results";
 
 const demo: DashboardData = {
   stats: { total: 8699, verified: 412, openProfile: 0, ready: 186 },
@@ -136,6 +136,10 @@ function scoreTone(score: number) {
   return "score score-review";
 }
 
+function hasLinkedInOutreach(status: string) {
+  return /^(dm sent|message sent|connection request sent|sent|linkedin contacted)$/i.test(status.trim());
+}
+
 export function LeadGenDashboard() {
   const [data, setData] = useState<DashboardData>(demo);
   const [selected, setSelected] = useState<Lead>(demo.leads[0]);
@@ -202,7 +206,8 @@ export function LeadGenDashboard() {
   }, [load]);
 
   const viewCounts = useMemo(() => ({
-    linkedin: data.leads.filter((lead) => Boolean(lead.linkedIn)).length,
+    linkedin: data.leads.filter((lead) => Boolean(lead.linkedIn) && !hasLinkedInOutreach(lead.connectionStatus)).length,
+    linkedinContacted: data.leads.filter((lead) => Boolean(lead.linkedIn) && hasLinkedInOutreach(lead.connectionStatus)).length,
     email: data.leads.filter((lead) => Boolean(lead.email)).length,
     verified: data.leads.filter((lead) => lead.matchScore >= 90).length,
     review: data.leads.filter((lead) => lead.matchScore < 80).length,
@@ -211,11 +216,13 @@ export function LeadGenDashboard() {
   const leads = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return data.leads.filter((lead) => {
+      const contactedOnLinkedIn = hasLinkedInOutreach(lead.connectionStatus);
       const matchesView =
-        activeView === "queue" ||
+        (activeView === "queue" && !contactedOnLinkedIn) ||
         activeView === "all" ||
         activeView === "results" ||
-        (activeView === "linkedin" && Boolean(lead.linkedIn)) ||
+        (activeView === "linkedin" && Boolean(lead.linkedIn) && !contactedOnLinkedIn) ||
+        (activeView === "linkedin-contacted" && Boolean(lead.linkedIn) && contactedOnLinkedIn) ||
         (activeView === "email" && Boolean(lead.email));
       const matchesQuery = !needle || [lead.company, lead.person, lead.city, lead.email].join(" ").toLowerCase().includes(needle);
       const matchesFilter =
@@ -247,7 +254,8 @@ export function LeadGenDashboard() {
   const viewCopy: Record<DashboardView, { eyebrow: string; title: string; description: string }> = {
     queue: { eyebrow: "Today", title: "Your highest-leverage leads", description: "Sorted by fit, evidence, and actionability" },
     all: { eyebrow: "Lead database", title: "All leads", description: "Search the complete Sheet3 lead inventory" },
-    linkedin: { eyebrow: "LinkedIn channel", title: "LinkedIn outreach", description: "Profiles found and ready for identity review" },
+    linkedin: { eyebrow: "LinkedIn channel", title: "LinkedIn outreach", description: "Profiles found and not yet contacted" },
+    "linkedin-contacted": { eyebrow: "LinkedIn channel", title: "LinkedIn contacted", description: "DMs and connection requests recorded in Sheet3" },
     email: { eyebrow: "Email channel", title: "Email outreach", description: "Contacts with an email and current Day 1 copy" },
     results: { eyebrow: "Coverage", title: "Enrichment results", description: "Current completion, verification, and channel coverage" },
   };
@@ -259,7 +267,7 @@ export function LeadGenDashboard() {
     setSidebarOpen(false);
   }
 
-  async function updateLead(row: number, field: string, value: string | boolean) {
+  async function updateLead(row: number, field: string, value: string | boolean, connectionStatus?: string) {
     setNotice("Saving to Sheet3…");
     try {
       const response = await fetch("/api/leadgen", {
@@ -268,6 +276,11 @@ export function LeadGenDashboard() {
         body: JSON.stringify({ action: "update", row, field, value }),
       });
       if (!response.ok) throw new Error("save failed");
+      if (connectionStatus) {
+        const updateStatus = (lead: Lead) => lead.row === row ? { ...lead, connectionStatus } : lead;
+        setData((current) => ({ ...current, leads: current.leads.map(updateStatus) }));
+        setSelected((current) => current.row === row ? updateStatus(current) : current);
+      }
       setNotice("Saved to Sheet3");
     } catch {
       setNotice("Could not save yet. Your sheet was not changed.");
@@ -329,6 +342,7 @@ export function LeadGenDashboard() {
           <button className={activeView === "queue" ? "nav-item active" : "nav-item"} onClick={() => changeView("queue")} aria-current={activeView === "queue" ? "page" : undefined}><Sparkles size={18} /> Today&apos;s queue <span>{data.stats.ready}</span></button>
           <button className={activeView === "all" ? "nav-item active" : "nav-item"} onClick={() => changeView("all")} aria-current={activeView === "all" ? "page" : undefined}><UserRoundCheck size={18} /> All leads</button>
           <button className={activeView === "linkedin" ? "nav-item active" : "nav-item"} onClick={() => changeView("linkedin")} aria-current={activeView === "linkedin" ? "page" : undefined}><BadgeCheck size={18} /> LinkedIn <span>{viewCounts.linkedin}</span></button>
+          <button className={activeView === "linkedin-contacted" ? "nav-item active" : "nav-item"} onClick={() => changeView("linkedin-contacted")} aria-current={activeView === "linkedin-contacted" ? "page" : undefined}><Send size={18} /> Contacted <span>{viewCounts.linkedinContacted}</span></button>
           <button className={activeView === "email" ? "nav-item active" : "nav-item"} onClick={() => changeView("email")} aria-current={activeView === "email" ? "page" : undefined}><Mail size={18} /> Email <span>{viewCounts.email}</span></button>
           <button className={activeView === "results" ? "nav-item active" : "nav-item"} onClick={() => changeView("results")} aria-current={activeView === "results" ? "page" : undefined}><BarChart3 size={18} /> Results</button>
         </nav>
@@ -439,7 +453,12 @@ export function LeadGenDashboard() {
               <a className="action primary-action" href={selected.linkedIn || undefined} target="_blank" rel="noreferrer"><BadgeCheck size={18} /><span><strong>Open LinkedIn</strong><small>{selected.connectionStatus}</small></span><ArrowUpRight size={16} /></a>
               <button className="action" onClick={copyMessage}><Copy size={18} /><span><strong>Copy message</strong><small>Current Day 1 copy</small></span></button>
               <a className="action" href={selected.email ? `mailto:${selected.email}` : undefined}><Mail size={18} /><span><strong>Compose email</strong><small>{selected.email || "No email"}</small></span></a>
-              <button className="action" onClick={() => updateLead(selected.row, "Connection Request Sent", true)}><Send size={18} /><span><strong>Mark request sent</strong><small>Writes timestamp to Sheet3</small></span></button>
+              {hasLinkedInOutreach(selected.connectionStatus) ? (
+                <button className="action" onClick={() => updateLead(selected.row, "LinkedIn Connection Status", "Ready", "Ready")}><Check size={18} /><span><strong>Undo LinkedIn contact</strong><small>Return this lead to the active queue</small></span></button>
+              ) : (
+                <button className="action" onClick={() => updateLead(selected.row, "LinkedIn Connection Status", "DM sent", "DM sent")}><Send size={18} /><span><strong>Mark LinkedIn DM sent</strong><small>Moves this lead to Contacted</small></span></button>
+              )}
+              {!hasLinkedInOutreach(selected.connectionStatus) && <button className="action" onClick={() => updateLead(selected.row, "Connection Request Sent", true, "Sent")}><UserRoundCheck size={18} /><span><strong>Mark connection request sent</strong><small>Writes a timestamp to Sheet3</small></span></button>}
             </div>
 
             <div className="message-card">
