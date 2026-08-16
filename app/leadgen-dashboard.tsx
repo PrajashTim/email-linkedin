@@ -228,6 +228,11 @@ export function LeadGenDashboard() {
     });
   }, [activeView, data.leads, filter, query]);
 
+  const totalCandidates = data.pagination?.totalCandidates || data.stats.total;
+  const loadedSummary = leads.length === data.leads.length
+    ? `${data.leads.length.toLocaleString()} loaded of ${totalCandidates.toLocaleString()} leads`
+    : `${leads.length.toLocaleString()} shown · ${data.leads.length.toLocaleString()} loaded of ${totalCandidates.toLocaleString()}`;
+
   useEffect(() => {
     if (activeView !== "results" && leads.length && !leads.some((lead) => lead.row === selected.row)) {
       setSelected(leads[0]);
@@ -383,17 +388,17 @@ export function LeadGenDashboard() {
               <label className="search-box"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search company, person, or city" /></label>
               <div className="filter-menu"><Filter size={16} /><select value={filter} onChange={(event) => setFilter(event.target.value)}>{filters.map((item) => <option key={item}>{item}</option>)}</select><ChevronDown size={15} /></div>
             </div>
-            <div className="queue-heading"><span>{leads.length} leads in view</span><small>{viewCopy[activeView].description}</small></div>
+            <div className="queue-heading"><span>{loadedSummary}</span><small>{viewCopy[activeView].description}</small></div>
             <div className="lead-list">
-              {loading ? <div className="empty-state">Loading Sheet3…</div> : leads.map((lead) => (
+              {loading ? <div className="empty-state">Loading Sheet3…</div> : leads.map((lead, index) => (
                 <button key={lead.row} className={selected.row === lead.row ? "lead-row selected" : "lead-row"} onClick={() => setSelected(lead)}>
                   <div className="avatar">{lead.company.split(/\s+/).slice(0, 2).map((word) => word[0]).join("")}</div>
                   <div className="lead-main"><strong>{lead.company}</strong><span>{lead.person || "Person not verified"} · {lead.city}</span><small>{lead.signal}</small></div>
-                  <div className="lead-meta"><span className={scoreTone(lead.matchScore)}>{lead.matchScore}</span><small>{lead.channel}</small></div>
+                  <div className="lead-meta"><small className="lead-position">#{index + 1} · Row {lead.row}</small><span className={scoreTone(lead.matchScore)}>{lead.matchScore}</span><small>{lead.channel}</small></div>
                 </button>
               ))}
               {!loading && !leads.length && <div className="empty-state">No leads match this view.</div>}
-              {!loading && hasMore && activeView === "all" ? <button className="load-more" onClick={loadMore} disabled={loadingMore}>{loadingMore ? "Loading more leads…" : `Load 200 more · ${data.leads.length.toLocaleString()} loaded`}</button> : null}
+              {!loading && hasMore ? <button className="load-more" onClick={loadMore} disabled={loadingMore}>{loadingMore ? "Loading more leads…" : `Load 200 more · ${data.leads.length.toLocaleString()} of ${totalCandidates.toLocaleString()} loaded`}</button> : null}
             </div>
           </div>
 
