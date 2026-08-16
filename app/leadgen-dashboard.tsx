@@ -354,7 +354,7 @@ export function LeadGenDashboard() {
         {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice("")}>×</button></div>}
 
         <section className="stats-grid" aria-label="Pipeline summary">
-          <article><span>Total leads</span><strong>{data.stats.total.toLocaleString()}</strong><small>Sheet3 backend</small></article>
+          <article><span>Total leads</span><strong>{data.stats.total.toLocaleString()}</strong><small>Live Sheet3 mirror</small></article>
           <article><span>Verified people</span><strong>{data.stats.verified.toLocaleString()}</strong><small>90+ identity score</small></article>
           <article><span>Open Profile</span><strong>{data.stats.openProfile.toLocaleString()}</strong><small>Paid check required</small></article>
           <article className="stat-accent"><span>Ready for action</span><strong>{data.stats.ready.toLocaleString()}</strong><small>Human-reviewed next steps</small></article>
