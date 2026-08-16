@@ -50,6 +50,7 @@ type DashboardData = {
   leads: Lead[];
   stats: { total: number; verified: number; openProfile: number; ready: number };
   pipeline: { status: string; nextRow: number; endRow: number };
+  pagination?: { offset: number; limit: number; returned: number; totalCandidates: number; hasMore: boolean };
 };
 
 type YouTubeVideo = {
@@ -65,6 +66,7 @@ type DashboardView = "queue" | "all" | "linkedin" | "email" | "results";
 const demo: DashboardData = {
   stats: { total: 8699, verified: 412, openProfile: 0, ready: 186 },
   pipeline: { status: "ready", nextRow: 698, endRow: 8700 },
+  pagination: { offset: 0, limit: 80, returned: 3, totalCandidates: 3, hasMore: false },
   leads: [
     {
       row: 10,
@@ -148,6 +150,8 @@ export function LeadGenDashboard() {
   const [videoCache, setVideoCache] = useState<Record<string, YouTubeVideo[]>>({});
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState("");
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
 
   const load = useCallback(async () => {
     setSyncing(true);
@@ -161,6 +165,7 @@ export function LeadGenDashboard() {
         const next = (await response.json()) as DashboardData;
         if (next.leads?.length) {
           setData(next);
+          setHasMore(Boolean(next.pagination?.hasMore));
           setSelected((current) => next.leads.find((lead) => lead.row === current.row) || next.leads[0]);
         }
       }
@@ -171,6 +176,26 @@ export function LeadGenDashboard() {
       setSyncing(false);
     }
   }, []);
+
+  async function loadMore() {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const response = await fetch("/api/leadgen", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "list", limit: 200, offset: data.leads.length }),
+      });
+      if (!response.ok) throw new Error("load failed");
+      const next = (await response.json()) as DashboardData;
+      setData((current) => ({ ...next, leads: [...current.leads, ...(next.leads || [])] }));
+      setHasMore(Boolean(next.pagination?.hasMore));
+    } catch {
+      setNotice("Could not load the next leads yet.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     void load();
@@ -368,6 +393,7 @@ export function LeadGenDashboard() {
                 </button>
               ))}
               {!loading && !leads.length && <div className="empty-state">No leads match this view.</div>}
+              {!loading && hasMore && activeView === "all" ? <button className="load-more" onClick={loadMore} disabled={loadingMore}>{loadingMore ? "Loading more leads…" : `Load 200 more · ${data.leads.length.toLocaleString()} loaded`}</button> : null}
             </div>
           </div>
 
