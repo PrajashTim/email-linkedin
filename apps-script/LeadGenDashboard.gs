@@ -24,7 +24,7 @@ function lgDashboardData_(limit, offset) {
   const columns = {
     company: liFindColumn_(map, ['Name', 'Company', 'Firm Name']), city: liFindColumn_(map, ['City']), website: liFindColumn_(map, ['Website']),
     person: liFindColumn_(map, ['Decision Maker Name', 'Primary Contact Name']), title: liFindColumn_(map, ['Decision Maker Title', 'Primary Contact Role']),
-    linkedIn: liFindColumn_(map, ['LinkedIn Account']), email: liFindColumn_(map, ['Primary Email', 'Email']), youtube: liFindColumn_(map, ['YouTube Channel', 'Youtube Channel']),
+    linkedIn: liFindColumn_(map, ['LinkedIn Account']), email: liFindColumn_(map, ['Primary Email', 'Email']), youtube: liFindColumn_(map, ['YT Channel', 'YouTube Channel', 'Youtube Channel']),
     signal: liFindColumn_(map, ['Why Now', 'Signal', 'Status']), message: liFindColumn_(map, ['Email 1 Body', 'Day 1 Email Body', 'First Day Email Body', 'Day 1 Message']),
     score: liFindColumn_(map, ['LinkedIn Match Score']), matchStatus: liFindColumn_(map, ['LinkedIn Match Status']), eligibility: liFindColumn_(map, ['LinkedIn Eligibility']),
     channel: liFindColumn_(map, ['Recommended Channel']), connectionStatus: liFindColumn_(map, ['LinkedIn Connection Status']), enrichmentStatus: liFindColumn_(map, ['LinkedIn Enrichment Status']),
@@ -68,6 +68,7 @@ function lgUpdateLead_(request) {
     if (timestampColumn) sheet.getRange(row, timestampColumn).setValue(request.value ? new Date() : '');
     if (statusColumn) sheet.getRange(row, statusColumn).setValue(request.value ? 'Sent' : 'Ready');
   }
+  if (typeof sgSyncSheet3Row_ === 'function') sgSyncSheet3Row_(sheet, row, map);
   return { ok: true, row: row, field: request.field };
 }
 

@@ -258,6 +258,7 @@ function liWriteResult_(sheet, row, map, result) {
     const column = liFindColumn_(map, [fields[key]]);
     if (column) sheet.getRange(row, column).setValue(result[key]);
   });
+  if (typeof sgSyncSheet3Row_ === 'function') sgSyncSheet3Row_(sheet, row, map);
 }
 
 function liInferWebsiteFromEmail_(email) {
@@ -290,4 +291,3 @@ function liGetSheet_() { const sheet = SpreadsheetApp.openById(LINKEDIN_CONFIG.S
 function liHeaderMap_(sheet) { return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0].reduce((map, header, index) => { const key = String(header || '').trim().toLowerCase(); if (key) map[key] = index + 1; return map; }, {}); }
 function liFindColumn_(map, candidates) { for (const candidate of candidates) { const column = map[String(candidate).trim().toLowerCase()]; if (column) return column; } return 0; }
 function liCell_(sheet, row, map, candidates) { const column = liFindColumn_(map, candidates); return column ? String(sheet.getRange(row, column).getDisplayValue() || '').trim() : ''; }
-
