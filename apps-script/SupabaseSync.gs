@@ -135,6 +135,7 @@ function sgLeadFromValues_(values, row, map) {
     eligibility: read(['LinkedIn Eligibility']) || (linkedIn ? 'Review identity' : 'Find LinkedIn'),
     channel: read(['Recommended Channel']) || (email ? 'Email first' : 'Needs research'),
     connection_status: read(['LinkedIn Connection Status']) || 'Not sent',
+    email_status: typeof emailReadOutreachStatus_ === 'function' ? emailReadOutreachStatus_(values, map) : read(['Email Outreach Status', 'Email Status', 'Email Sent']),
     enrichment_status: read(['LinkedIn Enrichment Status']) || 'queued',
     sheet_updated_at: new Date().toISOString(),
     synced_at: new Date().toISOString()
