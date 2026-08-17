@@ -24,7 +24,7 @@ import {
   UserRoundCheck,
   Video,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Lead = {
   row: number;
@@ -129,6 +129,34 @@ const demo: DashboardData = {
 };
 
 const filters = ["Priority", "Verified", "Needs review", "Ready to connect", "Email first"];
+const SPACEMAIL_WEB_URL = "https://www.spacemail.com/mail/?f=INBOX";
+
+function emailSubject(lead: Lead) {
+  return `Quick idea for ${lead.company}`;
+}
+
+function gmailDraftUrl(lead: Lead) {
+  if (!lead.email) return undefined;
+  const draft = new URL("https://mail.google.com/mail/");
+  draft.searchParams.set("view", "cm");
+  draft.searchParams.set("fs", "1");
+  draft.searchParams.set("to", lead.email);
+  draft.searchParams.set("su", emailSubject(lead));
+  draft.searchParams.set("body", lead.message || "");
+  return draft.toString();
+}
+
+function spaceMailDraftText(lead: Lead) {
+  return `To: ${lead.email}\nSubject: ${emailSubject(lead)}\n\n${lead.message || ""}`.trim();
+}
+
+function requestedSheetAction() {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  const row = Number(params.get("row"));
+  if (!Number.isInteger(row) || row < 2) return null;
+  return { row, prepareSpaceMail: params.get("prepare") === "spacemail" };
+}
 
 function scoreTone(score: number) {
   if (score >= 90) return "score score-good";
@@ -156,6 +184,9 @@ export function LeadGenDashboard() {
   const [videoError, setVideoError] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const [spaceMailDraftOpen, setSpaceMailDraftOpen] = useState(false);
+  const [preparedSpaceMailRow, setPreparedSpaceMailRow] = useState<number | null>(null);
+  const deepLinkHandled = useRef(false);
 
   const load = useCallback(async () => {
     setSyncing(true);
@@ -170,7 +201,20 @@ export function LeadGenDashboard() {
         if (next.leads?.length) {
           setData(next);
           setHasMore(Boolean(next.pagination?.hasMore));
-          setSelected((current) => next.leads.find((lead) => lead.row === current.row) || next.leads[0]);
+          const requested = !deepLinkHandled.current ? requestedSheetAction() : null;
+          const alreadyLoaded = requested ? next.leads.find((lead) => lead.row === requested.row) : undefined;
+          setSelected((current) => alreadyLoaded || next.leads.find((lead) => lead.row === current.row) || next.leads[0]);
+
+          if (requested) {
+            deepLinkHandled.current = true;
+            const exactLead = alreadyLoaded || await fetch("/api/leadgen", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ action: "lead", row: requested.row }),
+            }).then(async (result) => result.ok ? (await result.json() as { lead?: Lead }).lead : undefined).catch(() => undefined);
+            if (exactLead) setSelected(exactLead);
+            if (requested.prepareSpaceMail) setPreparedSpaceMailRow(exactLead?.row || requested.row);
+          }
         }
       }
     } catch {
@@ -249,7 +293,15 @@ export function LeadGenDashboard() {
   useEffect(() => {
     setVideosOpen(false);
     setVideoError("");
+    setSpaceMailDraftOpen(false);
   }, [selected.row]);
+
+  useEffect(() => {
+    if (preparedSpaceMailRow === selected.row) {
+      setSpaceMailDraftOpen(true);
+      setPreparedSpaceMailRow(null);
+    }
+  }, [preparedSpaceMailRow, selected.row]);
 
   const viewCopy: Record<DashboardView, { eyebrow: string; title: string; description: string }> = {
     queue: { eyebrow: "Today", title: "Your highest-leverage leads", description: "Sorted by fit, evidence, and actionability" },
@@ -298,9 +350,23 @@ export function LeadGenDashboard() {
     void load();
   }
 
+  async function copyText(value: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setNotice(`${label} copied`);
+    } catch {
+      setNotice("Copy is unavailable in this browser right now.");
+    }
+  }
+
   async function copyMessage() {
-    await navigator.clipboard.writeText(selected.message || "");
-    setNotice("LinkedIn message copied");
+    await copyText(selected.message || "", "Day 1 message");
+  }
+
+  function prepareSpaceMailDraft() {
+    setSpaceMailDraftOpen(true);
+    window.open(SPACEMAIL_WEB_URL, "_blank", "noopener,noreferrer");
+    setNotice("SpaceMail opened. Copy the prepared fields below, then review before sending.");
   }
 
   async function toggleVideos() {
@@ -452,7 +518,8 @@ export function LeadGenDashboard() {
             <div className="action-grid">
               <a className="action primary-action" href={selected.linkedIn || undefined} target="_blank" rel="noreferrer"><BadgeCheck size={18} /><span><strong>Open LinkedIn</strong><small>{selected.connectionStatus}</small></span><ArrowUpRight size={16} /></a>
               <button className="action" onClick={copyMessage}><Copy size={18} /><span><strong>Copy message</strong><small>Current Day 1 copy</small></span></button>
-              <a className="action" href={selected.email ? `mailto:${selected.email}` : undefined}><Mail size={18} /><span><strong>Compose email</strong><small>{selected.email || "No email"}</small></span></a>
+              <a className={selected.email ? "action" : "action action-disabled"} href={gmailDraftUrl(selected)} target="_blank" rel="noreferrer" aria-disabled={!selected.email}><Mail size={18} /><span><strong>Compose in Gmail</strong><small>{selected.email ? "Day 1 draft prefilled" : "No email"}</small></span><ArrowUpRight size={16} /></a>
+              <button className="action" onClick={prepareSpaceMailDraft} disabled={!selected.email}><Mail size={18} /><span><strong>Prepare SpaceMail draft</strong><small>{selected.email ? "Open, then paste reviewed copy" : "No email"}</small></span></button>
               {hasLinkedInOutreach(selected.connectionStatus) ? (
                 <button className="action" onClick={() => updateLead(selected.row, "LinkedIn Connection Status", "Ready", "Ready")}><Check size={18} /><span><strong>Undo LinkedIn contact</strong><small>Return this lead to the active queue</small></span></button>
               ) : (
@@ -460,6 +527,15 @@ export function LeadGenDashboard() {
               )}
               {!hasLinkedInOutreach(selected.connectionStatus) && <button className="action" onClick={() => updateLead(selected.row, "Connection Request Sent", true, "Sent")}><UserRoundCheck size={18} /><span><strong>Mark connection request sent</strong><small>Writes a timestamp to Sheet3</small></span></button>}
             </div>
+
+            {spaceMailDraftOpen && <div className="spacemail-card" aria-label="SpaceMail draft">
+              <div className="section-title"><span>SpaceMail draft</span><a href={SPACEMAIL_WEB_URL} target="_blank" rel="noreferrer">Open SpaceMail <ArrowUpRight size={13} /></a></div>
+              <p>SpaceMail&apos;s web composer does not accept prefilled draft URLs. Nothing is sent automatically: copy each field, paste it into the draft, and review it before you send.</p>
+              <div className="draft-field"><span>To</span><strong>{selected.email || "No email available"}</strong><button onClick={() => void copyText(selected.email, "Recipient")}>Copy</button></div>
+              <div className="draft-field"><span>Subject</span><strong>{emailSubject(selected)}</strong><button onClick={() => void copyText(emailSubject(selected), "Subject")}>Copy</button></div>
+              <div className="draft-message"><div><span>Day 1 body</span><button onClick={copyMessage}>Copy body</button></div><p>{selected.message || "No Day 1 message has been generated for this row yet."}</p></div>
+              <button className="copy-draft" onClick={() => void copyText(spaceMailDraftText(selected), "Full SpaceMail draft")}>Copy full draft for reference</button>
+            </div>}
 
             <div className="message-card">
               <div className="section-title"><span>Day 1 message</span><button onClick={copyMessage}>Copy</button></div>
