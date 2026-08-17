@@ -9,11 +9,41 @@ function doPost(event) {
     const expected = PropertiesService.getScriptProperties().getProperty('DASHBOARD_TOKEN');
     if (!expected || request.token !== expected) return lgJson_({ error: 'Unauthorized' });
     if (request.action === 'list') return lgJson_(lgDashboardData_(Math.min(200, Math.max(10, Number(request.limit) || 80)), Math.max(0, Number(request.offset) || 0)));
+    if (request.action === 'lead') return lgJson_(lgDashboardLeadByRow_(Number(request.row)));
     if (request.action === 'update') return lgJson_(lgUpdateLead_(request));
     if (request.action === 'startPipeline') { startLinkedInBatchAll(); return lgJson_({ ok: true, pipeline: getLinkedInBatchAllStatus() }); }
     if (request.action === 'stopPipeline') { stopLinkedInBatchAll(); return lgJson_({ ok: true, pipeline: getLinkedInBatchAllStatus() }); }
     return lgJson_({ error: 'Unknown action' });
   } catch (error) { return lgJson_({ error: String(error && error.message || error) }); }
+}
+
+function lgDashboardLeadByRow_(row) {
+  const sheet = liGetSheet_();
+  if (!Number.isInteger(row) || row < 2 || row > sheet.getLastRow()) throw new Error('Invalid row');
+  const map = liHeaderMap_(sheet);
+  const values = sheet.getRange(row, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
+  const read = candidates => {
+    const column = liFindColumn_(map, candidates);
+    return column ? String(values[column - 1] || '').trim() : '';
+  };
+  const linkedIn = read(['LinkedIn Account']);
+  const email = read(['Primary Email', 'Email']);
+  const score = Number(read(['LinkedIn Match Score'])) || 0;
+  return {
+    lead: {
+      row: row,
+      company: read(['Name', 'Company', 'Firm Name']), city: read(['City']), website: read(['Website']),
+      person: read(['Decision Maker Name', 'Primary Contact Name']), title: read(['Decision Maker Title', 'Primary Contact Role']),
+      linkedIn: linkedIn, email: email, youtube: read(['YT Channel', 'YouTube Channel', 'Youtube Channel']),
+      signal: read(['Why Now', 'Signal', 'Status']) || read(['LinkedIn Match Status']) || 'Awaiting signal review',
+      message: read(['Email 1 Body', 'Day 1 Email Body', 'First Day Email Body', 'Day 1 Message']),
+      matchScore: score, matchStatus: read(['LinkedIn Match Status']) || (linkedIn ? 'Existing link' : 'Not enriched'),
+      eligibility: read(['LinkedIn Eligibility']) || (linkedIn ? 'Review identity' : 'Find LinkedIn'),
+      channel: read(['Recommended Channel']) || (email ? 'Email first' : 'Needs research'),
+      connectionStatus: read(['LinkedIn Connection Status']) || 'Not sent',
+      enrichmentStatus: read(['LinkedIn Enrichment Status']) || 'queued'
+    }
+  };
 }
 
 function lgDashboardData_(limit, offset) {

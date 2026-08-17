@@ -31,6 +31,7 @@ function onSheet3EditToSupabase_(event) {
   const last = Math.min(sheet.getLastRow(), event.range.getLastRow());
   const rows = [];
   for (let row = first; row <= last && rows.length < 100; row++) {
+    if (typeof smEnsureSpaceMailLinkForRow_ === 'function') smEnsureSpaceMailLinkForRow_(sheet, row, map);
     const lead = sgLeadFromRow_(sheet, row, map);
     if (lead) rows.push(lead);
   }
