@@ -23,6 +23,7 @@ type SupabaseLead = {
   eligibility: string;
   channel: string;
   connection_status: string;
+  email_status: string;
   enrichment_status: string;
 };
 
@@ -51,6 +52,7 @@ function asDashboardLead(lead: SupabaseLead) {
     eligibility: lead.eligibility,
     channel: lead.channel,
     connectionStatus: lead.connection_status,
+    emailStatus: lead.email_status,
     enrichmentStatus: lead.enrichment_status,
   };
 }
@@ -61,7 +63,7 @@ async function listFromSupabase(body: Record<string, unknown>) {
   const limit = Math.min(200, Math.max(10, Number(body.limit) || 80));
   const offset = Math.max(0, Number(body.offset) || 0);
   const headers = { apikey: config.key, "content-type": "application/json" };
-  const response = await fetch(`${config.url}/rest/v1/rpc/leadgen_read_page`, {
+  const response = await fetch(`${config.url}/rest/v1/rpc/leadgen_read_page_v2`, {
     method: "POST",
     headers,
     body: JSON.stringify({ p_token: config.token, p_limit: limit, p_offset: offset }),

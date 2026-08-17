@@ -16,11 +16,16 @@ test("ships the LeadGen dashboard and secured server proxy", async () => {
   assert.match(dashboard, /Sync sheet/);
   assert.match(dashboard, /Mark LinkedIn DM sent/);
   assert.match(dashboard, /Undo LinkedIn contact/);
+  assert.match(dashboard, /Mark email sent/);
+  assert.match(dashboard, /Undo email sent/);
+  assert.match(dashboard, /Email Outreach Status/);
+  assert.match(dashboard, /emailStatus/);
   assert.match(dashboard, /LinkedIn contacted/);
   assert.match(dashboard, /connectionStatus/);
   assert.match(dashboard, /changeView\("linkedin"\)/);
   assert.match(dashboard, /changeView\("linkedin-contacted"\)/);
   assert.match(dashboard, /changeView\("email"\)/);
+  assert.match(dashboard, /changeView\("email-sent"\)/);
   assert.match(dashboard, /changeView\("results"\)/);
   assert.match(dashboard, /Enrichment results/);
   assert.match(dashboard, /Recent YouTube videos/);
