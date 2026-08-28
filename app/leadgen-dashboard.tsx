@@ -162,6 +162,13 @@ const demo: DashboardData = {
 
 const filters = ["Priority", "Verified", "Needs review", "Ready to connect", "Email first"];
 const SPACEMAIL_WEB_URL = "https://www.spacemail.com/mail/?f=INBOX";
+const HOLD_REASONS = [
+  "Stale or inactive YouTube channel",
+  "Contacted — not interested",
+  "Wrong contact or decision maker",
+  "Not a fit for this offer",
+  "Do not contact / already has a provider",
+];
 
 function emailSubject(lead: Lead) {
   return `Quick idea for ${lead.company}`;
@@ -343,7 +350,7 @@ export function LeadGenDashboard() {
       const contactedOnLinkedIn = hasLinkedInOutreach(lead.connectionStatus);
       const held = isHeld(lead);
       const matchesView =
-        (activeView === "queue" && !held && !contactedOnLinkedIn) ||
+        (activeView === "queue" && !held && !contactedOnLinkedIn && !hasEmailOutreach(lead.emailStatus)) ||
         activeView === "all" ||
         activeView === "results" ||
         (activeView === "linkedin" && !held && Boolean(lead.linkedIn) && !contactedOnLinkedIn) ||
@@ -387,12 +394,12 @@ export function LeadGenDashboard() {
   }, [preparedSpaceMailRow, selected.row]);
 
   const viewCopy: Record<DashboardView, { eyebrow: string; title: string; description: string }> = {
-    queue: { eyebrow: "Today", title: "Your highest-leverage leads", description: "Sorted by fit, evidence, and actionability" },
+    queue: { eyebrow: "Today", title: "Fresh leads", description: "Untouched email leads, sorted by fit and actionability" },
     all: { eyebrow: "Lead database", title: "All leads", description: "Search the complete Sheet3 lead inventory" },
     linkedin: { eyebrow: "LinkedIn channel", title: "LinkedIn outreach", description: "Profiles found and not yet contacted" },
     "linkedin-contacted": { eyebrow: "LinkedIn channel", title: "LinkedIn contacted", description: "DMs and connection requests recorded in Sheet3" },
     email: { eyebrow: "Email channel", title: "Email ready", description: "Contacts with an email that have not been marked as emailed" },
-    "follow-ups": { eyebrow: "Email channel", title: "Follow-ups", description: "Day 3 and Day 7 tasks stay reviewable before they are sent" },
+    "follow-ups": { eyebrow: "Email channel", title: "Follow-ups", description: "Day 1 is sent; Day 3 and Day 7 remain reviewable before sending" },
     held: { eyebrow: "Not now", title: "Held leads", description: "Skipped, paused, and no-response leads stay out of the active queue" },
     results: { eyebrow: "Coverage", title: "Enrichment results", description: "Current completion, verification, and channel coverage" },
   };
@@ -698,7 +705,7 @@ export function LeadGenDashboard() {
               )}
               {!hasLinkedInOutreach(selected.connectionStatus) && <button className="action" onClick={() => updateLead(selected.row, "Connection Request Sent", true, { connectionStatus: "Sent" })}><UserRoundCheck size={18} /><span><strong>Mark connection request sent</strong><small>Writes a timestamp to Sheet3</small></span></button>}
               {normalizedWorkflowStatus(selected) === "Active" ? (
-                <button className="action" onClick={() => void setDisposition("Skipped", "Stale YouTube channel")}><Pause size={18} /><span><strong>Skip — stale YouTube</strong><small>Moves it to Not now, not a delete</small></span></button>
+                <label className="action hold-action"><Pause size={18} /><span><strong>Move to Not now</strong><small>Choose a reason — it saves immediately</small></span><select aria-label="Reason to move lead to Not now" defaultValue="" onChange={(event) => { const reason = event.currentTarget.value; if (reason) { event.currentTarget.value = ""; void setDisposition("Skipped", reason); } }}><option value="" disabled>Choose a reason…</option>{HOLD_REASONS.map((reason) => <option key={reason} value={reason}>{reason}</option>)}</select></label>
               ) : (
                 <button className="action" onClick={() => void setDisposition("Active")}><Play size={18} /><span><strong>Restore lead</strong><small>{selected.workflowReason || "Return it to the active queue"}</small></span></button>
               )}

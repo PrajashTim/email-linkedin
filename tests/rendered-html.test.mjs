@@ -19,7 +19,8 @@ test("ships the LeadGen dashboard and secured server proxy", async () => {
   assert.match(dashboard, /Email sequence/);
   assert.match(dashboard, /Mark \{sequenceStepLabel\(selected\)\} sent/);
   assert.match(dashboard, /Pause email/);
-  assert.match(dashboard, /Skip — stale YouTube/);
+  assert.match(dashboard, /Move to Not now/);
+  assert.match(dashboard, /Contacted — not interested/);
   assert.match(dashboard, /emailStatus/);
   assert.match(dashboard, /LinkedIn contacted/);
   assert.match(dashboard, /connectionStatus/);
