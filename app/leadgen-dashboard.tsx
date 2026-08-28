@@ -38,6 +38,8 @@ type Lead = {
   youtube: string;
   signal: string;
   message: string;
+  day3Message: string;
+  day7Message: string;
   matchScore: number;
   matchStatus: string;
   eligibility: string;
@@ -45,6 +47,11 @@ type Lead = {
   connectionStatus: string;
   emailStatus: string;
   enrichmentStatus: string;
+  workflowStatus: string;
+  workflowReason: string;
+  emailSequenceStatus: string;
+  emailNextActionAt: string;
+  emailPausedStep: string;
 };
 
 type DashboardData = {
@@ -62,7 +69,7 @@ type YouTubeVideo = {
   url: string;
 };
 
-type DashboardView = "queue" | "all" | "linkedin" | "linkedin-contacted" | "email" | "email-sent" | "results";
+type DashboardView = "queue" | "all" | "linkedin" | "linkedin-contacted" | "email" | "follow-ups" | "held" | "results";
 
 const demo: DashboardData = {
   stats: { total: 8699, verified: 412, openProfile: 0, ready: 186 },
@@ -81,6 +88,8 @@ const demo: DashboardData = {
       youtube: "https://www.youtube.com/channel/UCxqe9HplAE-_Dg646ppYIqw",
       signal: "Inactive on YouTube · 730 days",
       message: "Greg, your Pink Ride video has 313 views, while the rest are under 20. We mapped the exact Virginia Beach searches that signal someone is ready to hire a personal injury attorney. Worth sending the 90-second script concept?",
+      day3Message: "Greg, just following up on the Virginia Beach search opportunity I mentioned. Want me to send the strongest 90-second video concept?",
+      day7Message: "Greg, I will close the loop after this. If a short, search-led video idea would help Sandler Law Group, I am happy to send it over.",
       matchScore: 72,
       matchStatus: "Needs review",
       eligibility: "Review identity",
@@ -88,6 +97,11 @@ const demo: DashboardData = {
       connectionStatus: "Not sent",
       emailStatus: "Sent",
       enrichmentStatus: "review",
+      workflowStatus: "Active",
+      workflowReason: "",
+      emailSequenceStatus: "Follow-up review",
+      emailNextActionAt: "",
+      emailPausedStep: "",
     },
     {
       row: 18,
@@ -101,6 +115,8 @@ const demo: DashboardData = {
       youtube: "https://www.youtube.com/@1800lionlaw",
       signal: "Strong decision-maker match",
       message: "Brett, your injury guides already answer the questions people ask before calling. I found three high-intent searches that could turn into short videos with a direct consultation CTA. Want the strongest one?",
+      day3Message: "Brett, circling back on those high-intent Dallas searches. Would seeing the strongest video angle be useful?",
+      day7Message: "Brett, closing the loop here. If content around the searches people make right before hiring would be helpful, I can send a concise outline.",
       matchScore: 94,
       matchStatus: "Verified",
       eligibility: "Connect",
@@ -108,6 +124,11 @@ const demo: DashboardData = {
       connectionStatus: "Ready",
       emailStatus: "Not sent",
       enrichmentStatus: "verified",
+      workflowStatus: "Active",
+      workflowReason: "",
+      emailSequenceStatus: "Not started",
+      emailNextActionAt: "",
+      emailPausedStep: "",
     },
     {
       row: 24,
@@ -121,6 +142,8 @@ const demo: DashboardData = {
       youtube: "",
       signal: "Company profile only",
       message: "Chris, I noticed your site has strong case education but no recent video path for Seattle accident searches. We can turn one proven search into a concise script you record once. Worth a look?",
+      day3Message: "Chris, following up on the Seattle video-search idea. Would a one-page concept be useful?",
+      day7Message: "Chris, I will leave this here after today. If you want a concise search-led video concept for Davis Law Group, I can send it.",
       matchScore: 61,
       matchStatus: "Company only",
       eligibility: "Find person",
@@ -128,6 +151,11 @@ const demo: DashboardData = {
       connectionStatus: "Missing person",
       emailStatus: "Not sent",
       enrichmentStatus: "company_only",
+      workflowStatus: "Active",
+      workflowReason: "",
+      emailSequenceStatus: "Not started",
+      emailNextActionAt: "",
+      emailPausedStep: "",
     },
   ],
 };
@@ -139,6 +167,48 @@ function emailSubject(lead: Lead) {
   return `Quick idea for ${lead.company}`;
 }
 
+function normalizedWorkflowStatus(lead: Lead) {
+  return lead.workflowStatus || "Active";
+}
+
+function normalizedSequenceStatus(lead: Lead) {
+  return lead.emailSequenceStatus || (hasEmailOutreach(lead.emailStatus) ? "Follow-up review" : "Not started");
+}
+
+function isHeld(lead: Lead) {
+  return normalizedWorkflowStatus(lead) !== "Active" || normalizedSequenceStatus(lead) === "Paused";
+}
+
+function currentSequenceStep(lead: Lead) {
+  const status = normalizedSequenceStatus(lead).toLowerCase();
+  if (status.includes("paused")) {
+    const paused = lead.emailPausedStep.toLowerCase();
+    if (paused.includes("day 7")) return "day7" as const;
+    if (paused.includes("day 3")) return "day3" as const;
+  }
+  if (status.includes("day 7") || status.includes("awaiting") || status.includes("no reply")) return "day7" as const;
+  if (status.includes("day 3") || status.includes("follow-up")) return "day3" as const;
+  return "day1" as const;
+}
+
+function sequenceStepLabel(lead: Lead) {
+  const step = currentSequenceStep(lead);
+  return step === "day1" ? "Day 1" : step === "day3" ? "Day 3" : "Day 7";
+}
+
+function currentSequenceMessage(lead: Lead) {
+  const step = currentSequenceStep(lead);
+  if (step === "day3") return lead.day3Message || lead.message || "";
+  if (step === "day7") return lead.day7Message || lead.day3Message || lead.message || "";
+  return lead.message || "";
+}
+
+function readableNextAction(value: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 function gmailDraftUrl(lead: Lead) {
   if (!lead.email) return undefined;
   const draft = new URL("https://mail.google.com/mail/");
@@ -146,12 +216,12 @@ function gmailDraftUrl(lead: Lead) {
   draft.searchParams.set("fs", "1");
   draft.searchParams.set("to", lead.email);
   draft.searchParams.set("su", emailSubject(lead));
-  draft.searchParams.set("body", lead.message || "");
+  draft.searchParams.set("body", currentSequenceMessage(lead));
   return draft.toString();
 }
 
 function spaceMailDraftText(lead: Lead) {
-  return `To: ${lead.email}\nSubject: ${emailSubject(lead)}\n\n${lead.message || ""}`.trim();
+  return `To: ${lead.email}\nSubject: ${emailSubject(lead)}\n\n${currentSequenceMessage(lead)}`.trim();
 }
 
 function requestedSheetAction() {
@@ -258,10 +328,11 @@ export function LeadGenDashboard() {
   }, [load]);
 
   const viewCounts = useMemo(() => ({
-    linkedin: data.leads.filter((lead) => Boolean(lead.linkedIn) && !hasLinkedInOutreach(lead.connectionStatus)).length,
-    linkedinContacted: data.leads.filter((lead) => Boolean(lead.linkedIn) && hasLinkedInOutreach(lead.connectionStatus)).length,
-    email: data.leads.filter((lead) => Boolean(lead.email) && !hasEmailOutreach(lead.emailStatus)).length,
-    emailSent: data.leads.filter((lead) => Boolean(lead.email) && hasEmailOutreach(lead.emailStatus)).length,
+    linkedin: data.leads.filter((lead) => !isHeld(lead) && Boolean(lead.linkedIn) && !hasLinkedInOutreach(lead.connectionStatus)).length,
+    linkedinContacted: data.leads.filter((lead) => !isHeld(lead) && Boolean(lead.linkedIn) && hasLinkedInOutreach(lead.connectionStatus)).length,
+    email: data.leads.filter((lead) => !isHeld(lead) && Boolean(lead.email) && !hasEmailOutreach(lead.emailStatus)).length,
+    followUps: data.leads.filter((lead) => !isHeld(lead) && Boolean(lead.email) && hasEmailOutreach(lead.emailStatus)).length,
+    held: data.leads.filter(isHeld).length,
     verified: data.leads.filter((lead) => lead.matchScore >= 90).length,
     review: data.leads.filter((lead) => lead.matchScore < 80).length,
   }), [data.leads]);
@@ -270,14 +341,16 @@ export function LeadGenDashboard() {
     const needle = query.trim().toLowerCase();
     return data.leads.filter((lead) => {
       const contactedOnLinkedIn = hasLinkedInOutreach(lead.connectionStatus);
+      const held = isHeld(lead);
       const matchesView =
-        (activeView === "queue" && !contactedOnLinkedIn) ||
+        (activeView === "queue" && !held && !contactedOnLinkedIn) ||
         activeView === "all" ||
         activeView === "results" ||
-        (activeView === "linkedin" && Boolean(lead.linkedIn) && !contactedOnLinkedIn) ||
-        (activeView === "linkedin-contacted" && Boolean(lead.linkedIn) && contactedOnLinkedIn) ||
-        (activeView === "email" && Boolean(lead.email) && !hasEmailOutreach(lead.emailStatus)) ||
-        (activeView === "email-sent" && Boolean(lead.email) && hasEmailOutreach(lead.emailStatus));
+        (activeView === "linkedin" && !held && Boolean(lead.linkedIn) && !contactedOnLinkedIn) ||
+        (activeView === "linkedin-contacted" && !held && Boolean(lead.linkedIn) && contactedOnLinkedIn) ||
+        (activeView === "email" && !held && Boolean(lead.email) && !hasEmailOutreach(lead.emailStatus)) ||
+        (activeView === "follow-ups" && !held && Boolean(lead.email) && hasEmailOutreach(lead.emailStatus)) ||
+        (activeView === "held" && held);
       const matchesQuery = !needle || [lead.company, lead.person, lead.city, lead.email].join(" ").toLowerCase().includes(needle);
       const matchesFilter =
         filter === "Priority" ||
@@ -319,7 +392,8 @@ export function LeadGenDashboard() {
     linkedin: { eyebrow: "LinkedIn channel", title: "LinkedIn outreach", description: "Profiles found and not yet contacted" },
     "linkedin-contacted": { eyebrow: "LinkedIn channel", title: "LinkedIn contacted", description: "DMs and connection requests recorded in Sheet3" },
     email: { eyebrow: "Email channel", title: "Email ready", description: "Contacts with an email that have not been marked as emailed" },
-    "email-sent": { eyebrow: "Email channel", title: "Email sent", description: "Email outreach recorded in Sheet3 — LinkedIn remains independent" },
+    "follow-ups": { eyebrow: "Email channel", title: "Follow-ups", description: "Day 3 and Day 7 tasks stay reviewable before they are sent" },
+    held: { eyebrow: "Not now", title: "Held leads", description: "Skipped, paused, and no-response leads stay out of the active queue" },
     results: { eyebrow: "Coverage", title: "Enrichment results", description: "Current completion, verification, and channel coverage" },
   };
 
@@ -371,7 +445,47 @@ export function LeadGenDashboard() {
   }
 
   async function copyMessage() {
-    await copyText(selected.message || "", "Day 1 message");
+    await copyText(currentSequenceMessage(selected), `${sequenceStepLabel(selected)} message`);
+  }
+
+  async function sequenceAction(action: "day1Sent" | "day3Sent" | "day7Sent" | "makeDay3Due" | "pause" | "resume" | "noReply") {
+    setNotice("Saving email workflow to Sheet3…");
+    try {
+      const response = await fetch("/api/leadgen", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "emailSequence", row: selected.row, sequenceAction: action }),
+      });
+      if (!response.ok) throw new Error("save failed");
+      const next = await response.json() as { lead?: Partial<Lead> };
+      const patch = next.lead || {};
+      const updateStatus = (lead: Lead) => lead.row === selected.row ? { ...lead, ...patch } : lead;
+      setData((current) => ({ ...current, leads: current.leads.map(updateStatus) }));
+      setSelected((current) => updateStatus(current));
+      setNotice(action === "pause" ? "Email follow-up paused" : action === "resume" ? "Email follow-up is ready for review" : action === "noReply" ? "Moved to No response" : "Sequence updated in Sheet3");
+    } catch {
+      setNotice("Could not update the email workflow yet.");
+    }
+  }
+
+  async function setDisposition(status: "Active" | "Skipped" | "No response", reason = "") {
+    setNotice("Updating lead status in Sheet3…");
+    try {
+      const response = await fetch("/api/leadgen", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "setDisposition", row: selected.row, status, reason }),
+      });
+      if (!response.ok) throw new Error("save failed");
+      const next = await response.json() as { lead?: Partial<Lead> };
+      const patch = next.lead || { workflowStatus: status, workflowReason: reason };
+      const updateStatus = (lead: Lead) => lead.row === selected.row ? { ...lead, ...patch } : lead;
+      setData((current) => ({ ...current, leads: current.leads.map(updateStatus) }));
+      setSelected((current) => updateStatus(current));
+      setNotice(status === "Active" ? "Lead returned to the active queue" : "Lead moved to Not now");
+    } catch {
+      setNotice("Could not update this lead yet.");
+    }
   }
 
   function prepareSpaceMailDraft() {
@@ -408,6 +522,25 @@ export function LeadGenDashboard() {
     }
   }
 
+  const sequenceStatus = normalizedSequenceStatus(selected);
+  const sequenceStep = currentSequenceStep(selected);
+  const sequencePaused = sequenceStatus === "Paused";
+  const workflowHeld = normalizedWorkflowStatus(selected) !== "Active";
+  const awaitingReply = /awaiting reply/i.test(sequenceStatus);
+  const legacyFollowUp = /follow-up review/i.test(sequenceStatus);
+  const nextAction = readableNextAction(selected.emailNextActionAt);
+  const sequenceSendAction = sequenceStep === "day1" ? "day1Sent" : sequenceStep === "day3" ? "day3Sent" : "day7Sent";
+  const sequenceProgress = sequenceStep === "day1" ? 0 : sequenceStep === "day3" ? 1 : 2;
+  const sequenceSummary = sequencePaused
+    ? `Paused at ${selected.emailPausedStep || sequenceStepLabel(selected)}`
+    : awaitingReply
+      ? "All planned emails were sent — waiting for a reply"
+      : legacyFollowUp
+        ? "Historic Day 1 send — choose when to begin Day 3 review"
+        : nextAction
+          ? `${sequenceStepLabel(selected)} review opens ${nextAction}`
+          : sequenceStatus;
+
   return (
     <div className="app-shell">
       <aside className={sidebarOpen ? "sidebar sidebar-open" : "sidebar"}>
@@ -421,7 +554,8 @@ export function LeadGenDashboard() {
           <button className={activeView === "linkedin" ? "nav-item active" : "nav-item"} onClick={() => changeView("linkedin")} aria-current={activeView === "linkedin" ? "page" : undefined}><BadgeCheck size={18} /> LinkedIn <span>{viewCounts.linkedin}</span></button>
           <button className={activeView === "linkedin-contacted" ? "nav-item active" : "nav-item"} onClick={() => changeView("linkedin-contacted")} aria-current={activeView === "linkedin-contacted" ? "page" : undefined}><Send size={18} /> Contacted <span>{viewCounts.linkedinContacted}</span></button>
           <button className={activeView === "email" ? "nav-item active" : "nav-item"} onClick={() => changeView("email")} aria-current={activeView === "email" ? "page" : undefined}><Mail size={18} /> Email <span>{viewCounts.email}</span></button>
-          <button className={activeView === "email-sent" ? "nav-item active" : "nav-item"} onClick={() => changeView("email-sent")} aria-current={activeView === "email-sent" ? "page" : undefined}><Check size={18} /> Emailed <span>{viewCounts.emailSent}</span></button>
+          <button className={activeView === "follow-ups" ? "nav-item active" : "nav-item"} onClick={() => changeView("follow-ups")} aria-current={activeView === "follow-ups" ? "page" : undefined}><Check size={18} /> Follow-ups <span>{viewCounts.followUps}</span></button>
+          <button className={activeView === "held" ? "nav-item active" : "nav-item"} onClick={() => changeView("held")} aria-current={activeView === "held" ? "page" : undefined}><Pause size={18} /> Not now <span>{viewCounts.held}</span></button>
           <button className={activeView === "results" ? "nav-item active" : "nav-item"} onClick={() => changeView("results")} aria-current={activeView === "results" ? "page" : undefined}><BarChart3 size={18} /> Results</button>
         </nav>
         <div className="sidebar-foot">
@@ -462,7 +596,8 @@ export function LeadGenDashboard() {
             <div className="results-summary">
               <article><BadgeCheck size={20} /><span>LinkedIn coverage</span><strong>{viewCounts.linkedin}</strong><small>Profiles in the currently loaded working set</small></article>
               <article><Mail size={20} /><span>Email ready</span><strong>{viewCounts.email}</strong><small>Contacts not yet marked as emailed</small></article>
-              <article><Check size={20} /><span>Email sent</span><strong>{viewCounts.emailSent}</strong><small>Tracked independently from LinkedIn</small></article>
+              <article><Check size={20} /><span>Follow-ups</span><strong>{viewCounts.followUps}</strong><small>Day 3 and Day 7 stays reviewable</small></article>
+              <article><Pause size={20} /><span>Not now</span><strong>{viewCounts.held}</strong><small>Skipped, paused, or no-response leads</small></article>
               <article><UserRoundCheck size={20} /><span>Verified people</span><strong>{viewCounts.verified}</strong><small>Identity match score of 90 or higher</small></article>
               <article><CircleAlert size={20} /><span>Needs review</span><strong>{viewCounts.review}</strong><small>Manual identity review recommended</small></article>
             </div>
@@ -470,7 +605,8 @@ export function LeadGenDashboard() {
               <div className="section-title"><span>Pipeline coverage</span><small>{data.pipeline.status}</small></div>
               <div className="coverage-row"><span>LinkedIn candidates</span><div><i style={{ width: `${data.leads.length ? Math.round((viewCounts.linkedin / data.leads.length) * 100) : 0}%` }} /></div><strong>{data.leads.length ? Math.round((viewCounts.linkedin / data.leads.length) * 100) : 0}%</strong></div>
               <div className="coverage-row"><span>Email ready</span><div><i style={{ width: `${data.leads.length ? Math.round((viewCounts.email / data.leads.length) * 100) : 0}%` }} /></div><strong>{data.leads.length ? Math.round((viewCounts.email / data.leads.length) * 100) : 0}%</strong></div>
-              <div className="coverage-row"><span>Email sent</span><div><i style={{ width: `${data.leads.length ? Math.round((viewCounts.emailSent / data.leads.length) * 100) : 0}%` }} /></div><strong>{data.leads.length ? Math.round((viewCounts.emailSent / data.leads.length) * 100) : 0}%</strong></div>
+              <div className="coverage-row"><span>Follow-ups</span><div><i style={{ width: `${data.leads.length ? Math.round((viewCounts.followUps / data.leads.length) * 100) : 0}%` }} /></div><strong>{data.leads.length ? Math.round((viewCounts.followUps / data.leads.length) * 100) : 0}%</strong></div>
+              <div className="coverage-row"><span>Not now</span><div><i style={{ width: `${data.leads.length ? Math.round((viewCounts.held / data.leads.length) * 100) : 0}%` }} /></div><strong>{data.leads.length ? Math.round((viewCounts.held / data.leads.length) * 100) : 0}%</strong></div>
               <div className="coverage-row"><span>Verified decision makers</span><div><i style={{ width: `${data.leads.length ? Math.round((viewCounts.verified / data.leads.length) * 100) : 0}%` }} /></div><strong>{data.leads.length ? Math.round((viewCounts.verified / data.leads.length) * 100) : 0}%</strong></div>
               <p>Coverage percentages use the leads returned by the current Sheet3 sync. The total cards above remain the authoritative full-list totals.</p>
             </div>
@@ -528,22 +664,43 @@ export function LeadGenDashboard() {
 
             {selected.matchScore < 80 && <div className="warning-card"><CircleAlert size={18} /><div><strong>Review before contacting</strong><span>The website/company evidence is not strong enough for frictionless outreach yet.</span></div></div>}
 
-            <div className="section-title"><span>Recommended next action</span><small>{selected.eligibility}</small></div>
+            <section className="sequence-card" aria-label="Email sequence">
+              <div className="section-title"><span>Email sequence</span><small>{sequenceStatus}</small></div>
+              <div className="sequence-progress" aria-label={`Current stage: ${sequenceStepLabel(selected)}`}>
+                {["Day 1", "Day 3", "Day 7"].map((step, index) => <div key={step} className={index < sequenceProgress ? "sequence-step done" : index === sequenceProgress ? "sequence-step current" : "sequence-step"}><i>{index < sequenceProgress ? <Check size={11} /> : index + 1}</i><span>{step}</span></div>)}
+              </div>
+              <p>{sequenceSummary}. Nothing is sent automatically.</p>
+              <div className="sequence-actions">
+                {workflowHeld ? (
+                  <span className="sequence-locked">Email is closed for this lead: {normalizedWorkflowStatus(selected)}.</span>
+                ) : awaitingReply ? (
+                  <button className="sequence-button primary" onClick={() => void sequenceAction("noReply")}><Check size={15} /> Mark no reply</button>
+                ) : legacyFollowUp ? (
+                  <button className="sequence-button primary" onClick={() => void sequenceAction("makeDay3Due")}><Play size={15} /> Start Day 3 review</button>
+                ) : (
+                  <>
+                    <a className={selected.email && !sequencePaused ? "sequence-button primary" : "sequence-button disabled"} href={selected.email && !sequencePaused ? gmailDraftUrl(selected) : undefined} target="_blank" rel="noreferrer" aria-disabled={!selected.email || sequencePaused}><Mail size={15} /> Compose {sequenceStepLabel(selected)}</a>
+                    <button className="sequence-button" onClick={() => void sequenceAction(sequenceSendAction)} disabled={!selected.email || sequencePaused}><Check size={15} /> Mark {sequenceStepLabel(selected)} sent</button>
+                  </>
+                )}
+                {!workflowHeld && <button className="sequence-button" onClick={() => sequencePaused ? void sequenceAction("resume") : void sequenceAction("pause")} disabled={awaitingReply}><Pause size={15} /> {sequencePaused ? "Resume" : "Pause email"}</button>}
+                {!workflowHeld && <button className="sequence-button" onClick={prepareSpaceMailDraft} disabled={!selected.email || sequencePaused || awaitingReply}><Copy size={15} /> SpaceMail</button>}
+              </div>
+            </section>
+
+            <div className="section-title"><span>LinkedIn action</span><small>{selected.eligibility}</small></div>
             <div className="action-grid">
               <a className="action primary-action" href={selected.linkedIn || undefined} target="_blank" rel="noreferrer"><BadgeCheck size={18} /><span><strong>Open LinkedIn</strong><small>{selected.connectionStatus}</small></span><ArrowUpRight size={16} /></a>
-              <button className="action" onClick={copyMessage}><Copy size={18} /><span><strong>Copy message</strong><small>Current Day 1 copy</small></span></button>
-              <a className={selected.email ? "action" : "action action-disabled"} href={gmailDraftUrl(selected)} target="_blank" rel="noreferrer" aria-disabled={!selected.email}><Mail size={18} /><span><strong>Compose in Gmail</strong><small>{selected.email ? `Day 1 draft prefilled · ${hasEmailOutreach(selected.emailStatus) ? "email sent" : "not sent"}` : "No email"}</small></span><ArrowUpRight size={16} /></a>
-              <button className="action" onClick={prepareSpaceMailDraft} disabled={!selected.email}><Mail size={18} /><span><strong>Prepare SpaceMail draft</strong><small>{selected.email ? "Open, then paste reviewed copy" : "No email"}</small></span></button>
               {hasLinkedInOutreach(selected.connectionStatus) ? (
                 <button className="action" onClick={() => updateLead(selected.row, "LinkedIn Connection Status", "Ready", { connectionStatus: "Ready" })}><Check size={18} /><span><strong>Undo LinkedIn contact</strong><small>Return this lead to the active queue</small></span></button>
               ) : (
                 <button className="action" onClick={() => updateLead(selected.row, "LinkedIn Connection Status", "DM sent", { connectionStatus: "DM sent" })}><Send size={18} /><span><strong>Mark LinkedIn DM sent</strong><small>Moves this lead to Contacted</small></span></button>
               )}
               {!hasLinkedInOutreach(selected.connectionStatus) && <button className="action" onClick={() => updateLead(selected.row, "Connection Request Sent", true, { connectionStatus: "Sent" })}><UserRoundCheck size={18} /><span><strong>Mark connection request sent</strong><small>Writes a timestamp to Sheet3</small></span></button>}
-              {hasEmailOutreach(selected.emailStatus) ? (
-                <button className="action" onClick={() => updateLead(selected.row, "Email Outreach Status", "Not sent", { emailStatus: "Not sent" })} disabled={!selected.email}><Check size={18} /><span><strong>Undo email sent</strong><small>Does not change LinkedIn status</small></span></button>
+              {normalizedWorkflowStatus(selected) === "Active" ? (
+                <button className="action" onClick={() => void setDisposition("Skipped", "Stale YouTube channel")}><Pause size={18} /><span><strong>Skip — stale YouTube</strong><small>Moves it to Not now, not a delete</small></span></button>
               ) : (
-                <button className="action" onClick={() => updateLead(selected.row, "Email Outreach Status", "Sent", { emailStatus: "Sent" })} disabled={!selected.email}><Mail size={18} /><span><strong>Mark email sent</strong><small>Writes email status and timestamp to Sheet3</small></span></button>
+                <button className="action" onClick={() => void setDisposition("Active")}><Play size={18} /><span><strong>Restore lead</strong><small>{selected.workflowReason || "Return it to the active queue"}</small></span></button>
               )}
             </div>
 
@@ -552,13 +709,13 @@ export function LeadGenDashboard() {
               <p>SpaceMail&apos;s web composer does not accept prefilled draft URLs. Nothing is sent automatically: copy each field, paste it into the draft, and review it before you send.</p>
               <div className="draft-field"><span>To</span><strong>{selected.email || "No email available"}</strong><button onClick={() => void copyText(selected.email, "Recipient")}>Copy</button></div>
               <div className="draft-field"><span>Subject</span><strong>{emailSubject(selected)}</strong><button onClick={() => void copyText(emailSubject(selected), "Subject")}>Copy</button></div>
-              <div className="draft-message"><div><span>Day 1 body</span><button onClick={copyMessage}>Copy body</button></div><p>{selected.message || "No Day 1 message has been generated for this row yet."}</p></div>
+              <div className="draft-message"><div><span>{sequenceStepLabel(selected)} body</span><button onClick={copyMessage}>Copy body</button></div><p>{currentSequenceMessage(selected) || `No ${sequenceStepLabel(selected)} message has been generated for this row yet.`}</p></div>
               <button className="copy-draft" onClick={() => void copyText(spaceMailDraftText(selected), "Full SpaceMail draft")}>Copy full draft for reference</button>
             </div>}
 
             <div className="message-card">
-              <div className="section-title"><span>Day 1 message</span><button onClick={copyMessage}>Copy</button></div>
-              <p>{selected.message || "No Day 1 message has been generated for this row yet."}</p>
+              <div className="section-title"><span>{sequenceStepLabel(selected)} message</span><button onClick={copyMessage}>Copy</button></div>
+              <p>{currentSequenceMessage(selected) || `No ${sequenceStepLabel(selected)} message has been generated for this row yet.`}</p>
             </div>
 
             <div className="evidence-list">

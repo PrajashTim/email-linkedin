@@ -118,6 +118,7 @@ function sgLeadFromValues_(values, row, map) {
   const linkedIn = read(['LinkedIn Account']);
   const email = read(['Primary Email', 'Email']);
   const score = Number(read(['LinkedIn Match Score'])) || 0;
+  const workflow = typeof emailWorkflowFromValues_ === 'function' ? emailWorkflowFromValues_(values, map) : {};
   return {
     row_number: row,
     company: company,
@@ -130,12 +131,19 @@ function sgLeadFromValues_(values, row, map) {
     youtube: read(['YT Channel', 'YouTube Channel', 'Youtube Channel']),
     signal: read(['Why Now', 'Signal', 'Status']) || read(['LinkedIn Match Status']) || 'Awaiting signal review',
     message: read(['Email 1 Body', 'Day 1 Email Body', 'First Day Email Body', 'Day 1 Message']),
+    message_day3: read(['Email 2 Body', 'Day 3 Email Body', 'Second Day Email Body', 'Day 3 Message']),
+    message_day7: read(['Email 3 Body', 'Day 7 Email Body', 'Third Day Email Body', 'Day 7 Message']),
     match_score: score,
     match_status: read(['LinkedIn Match Status']) || (linkedIn ? 'Existing link' : 'Not enriched'),
     eligibility: read(['LinkedIn Eligibility']) || (linkedIn ? 'Review identity' : 'Find LinkedIn'),
     channel: read(['Recommended Channel']) || (email ? 'Email first' : 'Needs research'),
     connection_status: read(['LinkedIn Connection Status']) || 'Not sent',
     email_status: typeof emailReadOutreachStatus_ === 'function' ? emailReadOutreachStatus_(values, map) : read(['Email Outreach Status', 'Email Status', 'Email Sent']),
+    workflow_status: workflow.workflowStatus || 'Active',
+    workflow_reason: workflow.workflowReason || '',
+    email_sequence_status: workflow.emailSequenceStatus || 'Not started',
+    email_next_action_at: workflow.emailNextActionAt || '',
+    email_paused_step: workflow.emailPausedStep || '',
     enrichment_status: read(['LinkedIn Enrichment Status']) || 'queued',
     sheet_updated_at: new Date().toISOString(),
     synced_at: new Date().toISOString()
