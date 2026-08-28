@@ -11,6 +11,8 @@ function doPost(event) {
     if (request.action === 'list') return lgJson_(lgDashboardData_(Math.min(200, Math.max(10, Number(request.limit) || 80)), Math.max(0, Number(request.offset) || 0)));
     if (request.action === 'lead') return lgJson_(lgDashboardLeadByRow_(Number(request.row)));
     if (request.action === 'update') return lgJson_(lgUpdateLead_(request));
+    if (request.action === 'emailSequence') return lgJson_(emailSequenceAction_(request));
+    if (request.action === 'setDisposition') return lgJson_(emailSetLeadDisposition_(request));
     if (request.action === 'startPipeline') { startLinkedInBatchAll(); return lgJson_({ ok: true, pipeline: getLinkedInBatchAllStatus() }); }
     if (request.action === 'stopPipeline') { stopLinkedInBatchAll(); return lgJson_({ ok: true, pipeline: getLinkedInBatchAllStatus() }); }
     if (request.action === 'startSupabaseBackfill') { startSupabaseBackfill(); return lgJson_({ ok: true, sync: 'started' }); }
@@ -30,6 +32,7 @@ function lgDashboardLeadByRow_(row) {
   const linkedIn = read(['LinkedIn Account']);
   const email = read(['Primary Email', 'Email']);
   const score = Number(read(['LinkedIn Match Score'])) || 0;
+  const workflow = typeof emailWorkflowFromValues_ === 'function' ? emailWorkflowFromValues_(values, map) : {};
   return {
     lead: {
       row: row,
@@ -38,11 +41,14 @@ function lgDashboardLeadByRow_(row) {
       linkedIn: linkedIn, email: email, youtube: read(['YT Channel', 'YouTube Channel', 'Youtube Channel']),
       signal: read(['Why Now', 'Signal', 'Status']) || read(['LinkedIn Match Status']) || 'Awaiting signal review',
       message: read(['Email 1 Body', 'Day 1 Email Body', 'First Day Email Body', 'Day 1 Message']),
+      day3Message: read(['Email 2 Body', 'Day 3 Email Body', 'Second Day Email Body', 'Day 3 Message']),
+      day7Message: read(['Email 3 Body', 'Day 7 Email Body', 'Third Day Email Body', 'Day 7 Message']),
       matchScore: score, matchStatus: read(['LinkedIn Match Status']) || (linkedIn ? 'Existing link' : 'Not enriched'),
       eligibility: read(['LinkedIn Eligibility']) || (linkedIn ? 'Review identity' : 'Find LinkedIn'),
       channel: read(['Recommended Channel']) || (email ? 'Email first' : 'Needs research'),
       connectionStatus: read(['LinkedIn Connection Status']) || 'Not sent',
       emailStatus: typeof emailReadOutreachStatus_ === 'function' ? emailReadOutreachStatus_(values, map) : read(['Email Outreach Status', 'Email Status', 'Email Sent']),
+      workflowStatus: workflow.workflowStatus || 'Active', workflowReason: workflow.workflowReason || '', emailSequenceStatus: workflow.emailSequenceStatus || 'Not started', emailNextActionAt: workflow.emailNextActionAt || '', emailPausedStep: workflow.emailPausedStep || '',
       enrichmentStatus: read(['LinkedIn Enrichment Status']) || 'queued'
     }
   };
@@ -57,7 +63,7 @@ function lgDashboardData_(limit, offset) {
     company: liFindColumn_(map, ['Name', 'Company', 'Firm Name']), city: liFindColumn_(map, ['City']), website: liFindColumn_(map, ['Website']),
     person: liFindColumn_(map, ['Decision Maker Name', 'Primary Contact Name']), title: liFindColumn_(map, ['Decision Maker Title', 'Primary Contact Role']),
     linkedIn: liFindColumn_(map, ['LinkedIn Account']), email: liFindColumn_(map, ['Primary Email', 'Email']), youtube: liFindColumn_(map, ['YT Channel', 'YouTube Channel', 'Youtube Channel']),
-    signal: liFindColumn_(map, ['Why Now', 'Signal', 'Status']), message: liFindColumn_(map, ['Email 1 Body', 'Day 1 Email Body', 'First Day Email Body', 'Day 1 Message']),
+    signal: liFindColumn_(map, ['Why Now', 'Signal', 'Status']), message: liFindColumn_(map, ['Email 1 Body', 'Day 1 Email Body', 'First Day Email Body', 'Day 1 Message']), day3Message: liFindColumn_(map, ['Email 2 Body', 'Day 3 Email Body', 'Second Day Email Body', 'Day 3 Message']), day7Message: liFindColumn_(map, ['Email 3 Body', 'Day 7 Email Body', 'Third Day Email Body', 'Day 7 Message']),
     score: liFindColumn_(map, ['LinkedIn Match Score']), matchStatus: liFindColumn_(map, ['LinkedIn Match Status']), eligibility: liFindColumn_(map, ['LinkedIn Eligibility']),
     channel: liFindColumn_(map, ['Recommended Channel']), connectionStatus: liFindColumn_(map, ['LinkedIn Connection Status']), emailStatus: typeof emailFindOutreachStatusColumn_ === 'function' ? emailFindOutreachStatusColumn_(map) : liFindColumn_(map, ['Email Outreach Status', 'Email Status', 'Email Sent']), enrichmentStatus: liFindColumn_(map, ['LinkedIn Enrichment Status']),
     openProfile: liFindColumn_(map, ['LinkedIn Open Profile'])
@@ -76,7 +82,8 @@ function lgDashboardData_(limit, offset) {
     if (/^(yes|true|open)$/i.test(data.openProfile[index])) openProfile++;
     if (/ready|connect|email first/i.test(data.eligibility[index])) ready++;
     if (!data.company[index]) continue;
-    const lead = { row: index + 2, company: data.company[index], city: data.city[index], website: data.website[index], person: data.person[index], title: data.title[index], linkedIn: data.linkedIn[index], email: data.email[index], youtube: data.youtube[index], signal: data.signal[index] || data.matchStatus[index] || 'Awaiting signal review', message: data.message[index], matchScore: score, matchStatus: data.matchStatus[index] || (data.linkedIn[index] ? 'Existing link' : 'Not enriched'), eligibility: data.eligibility[index] || (data.linkedIn[index] ? 'Review identity' : 'Find LinkedIn'), channel: data.channel[index] || (data.email[index] ? 'Email first' : 'Needs research'), connectionStatus: data.connectionStatus[index] || 'Not sent', emailStatus: data.emailStatus[index] || 'Not sent', enrichmentStatus: data.enrichmentStatus[index] || 'queued' };
+    const workflow = typeof emailWorkflowFromValues_ === 'function' ? emailWorkflowFromValues_(rows[index], map) : {};
+    const lead = { row: index + 2, company: data.company[index], city: data.city[index], website: data.website[index], person: data.person[index], title: data.title[index], linkedIn: data.linkedIn[index], email: data.email[index], youtube: data.youtube[index], signal: data.signal[index] || data.matchStatus[index] || 'Awaiting signal review', message: data.message[index], day3Message: data.day3Message[index], day7Message: data.day7Message[index], matchScore: score, matchStatus: data.matchStatus[index] || (data.linkedIn[index] ? 'Existing link' : 'Not enriched'), eligibility: data.eligibility[index] || (data.linkedIn[index] ? 'Review identity' : 'Find LinkedIn'), channel: data.channel[index] || (data.email[index] ? 'Email first' : 'Needs research'), connectionStatus: data.connectionStatus[index] || 'Not sent', emailStatus: data.emailStatus[index] || 'Not sent', workflowStatus: workflow.workflowStatus || 'Active', workflowReason: workflow.workflowReason || '', emailSequenceStatus: workflow.emailSequenceStatus || 'Not started', emailNextActionAt: workflow.emailNextActionAt || '', emailPausedStep: workflow.emailPausedStep || '', enrichmentStatus: data.enrichmentStatus[index] || 'queued' };
     leads.push(lead);
   }
   leads.sort((a, b) => (b.matchScore - a.matchScore) || (a.row - b.row));

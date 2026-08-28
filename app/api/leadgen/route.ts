@@ -18,6 +18,8 @@ type SupabaseLead = {
   youtube: string;
   signal: string;
   message: string;
+  message_day3: string;
+  message_day7: string;
   match_score: number | string;
   match_status: string;
   eligibility: string;
@@ -25,6 +27,11 @@ type SupabaseLead = {
   connection_status: string;
   email_status: string;
   enrichment_status: string;
+  workflow_status: string;
+  workflow_reason: string;
+  email_sequence_status: string;
+  email_next_action_at: string;
+  email_paused_step: string;
 };
 
 function supabaseConfig() {
@@ -47,6 +54,8 @@ function asDashboardLead(lead: SupabaseLead) {
     youtube: lead.youtube,
     signal: lead.signal,
     message: lead.message,
+    day3Message: lead.message_day3,
+    day7Message: lead.message_day7,
     matchScore: Number(lead.match_score) || 0,
     matchStatus: lead.match_status,
     eligibility: lead.eligibility,
@@ -54,6 +63,11 @@ function asDashboardLead(lead: SupabaseLead) {
     connectionStatus: lead.connection_status,
     emailStatus: lead.email_status,
     enrichmentStatus: lead.enrichment_status,
+    workflowStatus: lead.workflow_status,
+    workflowReason: lead.workflow_reason,
+    emailSequenceStatus: lead.email_sequence_status,
+    emailNextActionAt: lead.email_next_action_at,
+    emailPausedStep: lead.email_paused_step,
   };
 }
 
@@ -63,7 +77,7 @@ async function listFromSupabase(body: Record<string, unknown>) {
   const limit = Math.min(200, Math.max(10, Number(body.limit) || 80));
   const offset = Math.max(0, Number(body.offset) || 0);
   const headers = { apikey: config.key, "content-type": "application/json" };
-  const response = await fetch(`${config.url}/rest/v1/rpc/leadgen_read_page_v2`, {
+  const response = await fetch(`${config.url}/rest/v1/rpc/leadgen_read_page_v3`, {
     method: "POST",
     headers,
     body: JSON.stringify({ p_token: config.token, p_limit: limit, p_offset: offset }),
